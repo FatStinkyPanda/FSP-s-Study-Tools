@@ -5,6 +5,7 @@ import { DatabaseManager } from '../core/database/DatabaseManager';
 import { AIManager } from '../core/ai/AIManager';
 import { ConversationManager } from '../core/ai/ConversationManager';
 import { KnowledgeBaseManager } from '../core/knowledge/KnowledgeBaseManager';
+import { SettingsManager } from '../core/settings';
 
 class Application {
   private mainWindow: BrowserWindow | null = null;
@@ -12,6 +13,7 @@ class Application {
   private aiManager: AIManager | null = null;
   private conversationManager: ConversationManager | null = null;
   private knowledgeBaseManager: KnowledgeBaseManager | null = null;
+  private settingsManager: SettingsManager | null = null;
 
   constructor() {
     this.initializeApp();
@@ -80,6 +82,9 @@ class Application {
     if (!this.databaseManager) {
       throw new Error('Database must be initialized before AI');
     }
+
+    // Initialize Settings Manager
+    this.settingsManager = new SettingsManager(this.databaseManager);
 
     // Initialize AI Manager (configuration will be loaded from database)
     this.aiManager = new AIManager();
@@ -332,6 +337,68 @@ class Application {
 
     ipcMain.handle('app:path', (_event, name: string) => {
       return app.getPath(name as any);
+    });
+
+    // Settings handlers
+    ipcMain.handle('settings:getAll', async () => {
+      if (!this.settingsManager) {
+        throw new Error('Settings Manager not initialized');
+      }
+      return this.settingsManager.getAll();
+    });
+
+    ipcMain.handle('settings:get', async (_event, key: string, defaultValue?: string) => {
+      if (!this.settingsManager) {
+        throw new Error('Settings Manager not initialized');
+      }
+      return this.settingsManager.get(key, defaultValue);
+    });
+
+    ipcMain.handle('settings:set', async (_event, key: string, value: string | number | boolean, category?: string) => {
+      if (!this.settingsManager) {
+        throw new Error('Settings Manager not initialized');
+      }
+      this.settingsManager.set(key, value, category);
+      return true;
+    });
+
+    ipcMain.handle('settings:updateAll', async (_event, settings: unknown) => {
+      if (!this.settingsManager) {
+        throw new Error('Settings Manager not initialized');
+      }
+      this.settingsManager.updateAll(settings as any);
+      return true;
+    });
+
+    ipcMain.handle('settings:delete', async (_event, key: string) => {
+      if (!this.settingsManager) {
+        throw new Error('Settings Manager not initialized');
+      }
+      this.settingsManager.delete(key);
+      return true;
+    });
+
+    ipcMain.handle('settings:reset', async () => {
+      if (!this.settingsManager) {
+        throw new Error('Settings Manager not initialized');
+      }
+      this.settingsManager.resetToDefaults();
+      return true;
+    });
+
+    ipcMain.handle('settings:export', async () => {
+      if (!this.settingsManager) {
+        throw new Error('Settings Manager not initialized');
+      }
+      return this.settingsManager.export();
+    });
+
+    ipcMain.handle('settings:import', async (_event, json: string) => {
+      if (!this.settingsManager) {
+        throw new Error('Settings Manager not initialized');
+      }
+      this.settingsManager.import(json);
+      return true;
     });
   }
 

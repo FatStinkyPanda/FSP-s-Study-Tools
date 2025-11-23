@@ -21,11 +21,21 @@ interface KnowledgeBase {
   metadata?: Record<string, unknown>;
 }
 
+interface AppSettings {
+  openai_api_key?: string;
+  anthropic_api_key?: string;
+  google_api_key?: string;
+  openrouter_api_key?: string;
+  theme?: 'dark' | 'light' | 'auto';
+}
+
 function App() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [loading, setLoading] = useState(true);
   const [appVersion, setAppVersion] = useState('');
   const [currentView, setCurrentView] = useState<'home' | 'browse' | 'study' | 'settings'>('home');
+  const [settings, setSettings] = useState<AppSettings>({});
+  const [settingsSaved, setSettingsSaved] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -40,11 +50,33 @@ function App() {
       // Load knowledge bases
       const kbs = await window.electronAPI.invoke('kb:list') as KnowledgeBase[];
       setKnowledgeBases(kbs);
+
+      // Load settings
+      const loadedSettings = await window.electronAPI.invoke('settings:getAll') as AppSettings;
+      setSettings(loadedSettings);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const saveSettings = async () => {
+    try {
+      await window.electronAPI.invoke('settings:updateAll', settings);
+      setSettingsSaved(true);
+      setTimeout(() => setSettingsSaved(false), 3000);
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+      alert(`Failed to save settings: ${(error as Error).message}`);
+    }
+  };
+
+  const handleSettingChange = (key: keyof AppSettings, value: string) => {
+    setSettings(prev => ({
+      ...prev,
+      [key]: value
+    }));
   };
 
   const getSampleXML = async () => {
@@ -227,38 +259,119 @@ function App() {
 
         {currentView === 'settings' && (
           <div className="view settings-view">
-            <h2>Settings</h2>
+            <div className="settings-header">
+              <h2>Settings</h2>
+              {settingsSaved && (
+                <div className="settings-saved-indicator">
+                  Settings saved successfully
+                </div>
+              )}
+            </div>
+
             <div className="settings-section">
               <h3>AI Providers</h3>
-              <p>Configure AI provider API keys and settings</p>
+              <p className="settings-description">
+                Configure AI provider API keys to enable AI-powered tutoring.
+                Your API keys are stored securely and never leave your device.
+              </p>
+
               <div className="setting-item">
-                <label>OpenAI</label>
-                <input type="password" placeholder="API Key" />
+                <label htmlFor="openai-key">
+                  OpenAI API Key
+                  <span className="setting-status">
+                    {settings.openai_api_key ? ' (Configured)' : ' (Not configured)'}
+                  </span>
+                </label>
+                <input
+                  id="openai-key"
+                  type="password"
+                  placeholder="sk-..."
+                  value={settings.openai_api_key || ''}
+                  onChange={(e) => handleSettingChange('openai_api_key', e.target.value)}
+                />
+                <span className="setting-hint">
+                  Get your API key from platform.openai.com
+                </span>
               </div>
+
               <div className="setting-item">
-                <label>Anthropic</label>
-                <input type="password" placeholder="API Key" />
+                <label htmlFor="anthropic-key">
+                  Anthropic API Key
+                  <span className="setting-status">
+                    {settings.anthropic_api_key ? ' (Configured)' : ' (Not configured)'}
+                  </span>
+                </label>
+                <input
+                  id="anthropic-key"
+                  type="password"
+                  placeholder="sk-ant-..."
+                  value={settings.anthropic_api_key || ''}
+                  onChange={(e) => handleSettingChange('anthropic_api_key', e.target.value)}
+                />
+                <span className="setting-hint">
+                  Get your API key from console.anthropic.com
+                </span>
               </div>
+
               <div className="setting-item">
-                <label>Google AI</label>
-                <input type="password" placeholder="API Key" />
+                <label htmlFor="google-key">
+                  Google AI API Key
+                  <span className="setting-status">
+                    {settings.google_api_key ? ' (Configured)' : ' (Not configured)'}
+                  </span>
+                </label>
+                <input
+                  id="google-key"
+                  type="password"
+                  placeholder="AIza..."
+                  value={settings.google_api_key || ''}
+                  onChange={(e) => handleSettingChange('google_api_key', e.target.value)}
+                />
+                <span className="setting-hint">
+                  Get your API key from makersuite.google.com
+                </span>
               </div>
+
               <div className="setting-item">
-                <label>OpenRouter</label>
-                <input type="password" placeholder="API Key" />
+                <label htmlFor="openrouter-key">
+                  OpenRouter API Key
+                  <span className="setting-status">
+                    {settings.openrouter_api_key ? ' (Configured)' : ' (Not configured)'}
+                  </span>
+                </label>
+                <input
+                  id="openrouter-key"
+                  type="password"
+                  placeholder="sk-or-..."
+                  value={settings.openrouter_api_key || ''}
+                  onChange={(e) => handleSettingChange('openrouter_api_key', e.target.value)}
+                />
+                <span className="setting-hint">
+                  Get your API key from openrouter.ai
+                </span>
               </div>
             </div>
 
             <div className="settings-section">
               <h3>Application</h3>
               <div className="setting-item">
-                <label>Theme</label>
-                <select>
-                  <option>Dark</option>
-                  <option>Light</option>
-                  <option>Auto</option>
+                <label htmlFor="theme">Theme</label>
+                <select
+                  id="theme"
+                  value={settings.theme || 'dark'}
+                  onChange={(e) => handleSettingChange('theme', e.target.value)}
+                >
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                  <option value="auto">Auto</option>
                 </select>
               </div>
+            </div>
+
+            <div className="settings-actions">
+              <button className="primary-button" onClick={saveSettings}>
+                Save Settings
+              </button>
             </div>
           </div>
         )}
