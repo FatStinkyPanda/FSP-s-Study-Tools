@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ChatPanel from './ChatPanel';
 
 interface Question {
   id: string;
@@ -44,6 +45,7 @@ function StudySession({ onExit }: StudySessionProps) {
   const [score, setScore] = useState(0);
   const [answeredQuestions, setAnsweredQuestions] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   useEffect(() => {
     loadKnowledgeBases();
@@ -322,6 +324,14 @@ function StudySession({ onExit }: StudySessionProps) {
           )}
         </div>
       </div>
+
+      <ChatPanel
+        isOpen={isChatOpen}
+        onToggle={() => setIsChatOpen(!isChatOpen)}
+        currentQuestion={currentQuestion.question}
+        currentTopic={currentQuestion.tags?.[0]}
+        knowledgeBaseId={selectedKB}
+      />
     </div>
   );
 }
