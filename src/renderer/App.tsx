@@ -56,6 +56,24 @@ function App() {
     }
   };
 
+  const importKnowledgeBase = async () => {
+    try {
+      // Call IPC handler that opens dialog, reads file, and imports
+      const result = await window.electronAPI.invoke('kb:importFile') as { success: boolean; kbId?: number; error?: string };
+
+      if (result.success && result.kbId) {
+        alert(`Knowledge base imported successfully! ID: ${result.kbId}`);
+        // Reload data
+        await loadData();
+      } else if (result.error) {
+        alert(`Failed to import: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to import knowledge base:', error);
+      alert(`Failed to import: ${(error as Error).message}`);
+    }
+  };
+
   if (loading) {
     return (
       <div className="app loading">
@@ -159,7 +177,12 @@ function App() {
 
         {currentView === 'browse' && (
           <div className="view browse-view">
-            <h2>Knowledge Base Browser</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0 }}>Knowledge Base Browser</h2>
+              <button className="primary-button" onClick={importKnowledgeBase}>
+                Import XML
+              </button>
+            </div>
             {knowledgeBases.length === 0 ? (
               <div className="empty-state">
                 <p>No knowledge bases available.</p>

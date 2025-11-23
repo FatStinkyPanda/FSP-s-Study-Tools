@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 import { DatabaseManager } from '../core/database/DatabaseManager';
 import { AIManager } from '../core/ai/AIManager';
 import { ConversationManager } from '../core/ai/ConversationManager';
@@ -292,6 +293,36 @@ class Application {
         throw new Error('Knowledge Base Manager not initialized');
       }
       return this.knowledgeBaseManager.getSampleXML();
+    });
+
+    ipcMain.handle('kb:importFile', async () => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+
+      try {
+        // Open file dialog
+        const result = await dialog.showOpenDialog({
+          filters: [{ name: 'XML Files', extensions: ['xml'] }],
+          properties: ['openFile']
+        });
+
+        if (result.canceled || result.filePaths.length === 0) {
+          return { success: false };
+        }
+
+        const filePath = result.filePaths[0];
+
+        // Read file content
+        const xmlContent = fs.readFileSync(filePath, 'utf-8');
+
+        // Import KB
+        const kbId = await this.knowledgeBaseManager.importFromXML(xmlContent, filePath);
+
+        return { success: true, kbId };
+      } catch (error) {
+        return { success: false, error: (error as Error).message };
+      }
     });
 
     // Application info
