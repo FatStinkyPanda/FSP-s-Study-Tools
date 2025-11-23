@@ -129,7 +129,12 @@ class Application {
       if (!this.databaseManager) {
         throw new Error('Database not initialized');
       }
-      return this.databaseManager.createKnowledgeBase(data);
+      return this.databaseManager.createKnowledgeBase(data as {
+        uuid: string;
+        title: string;
+        xml_content: string;
+        metadata?: Record<string, unknown>;
+      });
     });
 
     // Application info

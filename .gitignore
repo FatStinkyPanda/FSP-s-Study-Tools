@@ -47,6 +47,12 @@ Cargo.lock
 .DS_Store
 Thumbs.db
 
+# Python virtual environment
+venv/
+env/
+ENV/
+.venv/
+
 # Environment variables
 .env
 .env.local
