@@ -1,0 +1,9 @@
+{
+  "timestamp": "2025-11-23T21:00:56.623Z",
+  "git_hooks_installed": true,
+  "hooks": [
+    "pre-commit"
+  ],
+  "enforcement_active": true,
+  "project": "FSP's Study Tools"
+}
