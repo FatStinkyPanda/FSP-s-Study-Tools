@@ -75,31 +75,61 @@ export interface KnowledgeBaseMetadata {
 export interface Module {
   id: string;
   title: string;
+  description?: string;
+  order?: number;
   chapters: Chapter[];
 }
 
 export interface Chapter {
   id: string;
   title: string;
+  description?: string;
+  order?: number;
   sections: Section[];
 }
 
 export interface Section {
   id: string;
   title: string;
+  order?: number;
   content: SectionContent;
-  semantics: SectionSemantics;
+  semantics?: SectionSemantics;
+  questions?: Question[];
+  resources?: Resource[];
 }
 
 export interface SectionContent {
   text: string;
-  images: Image[];
+  html?: string;
+  markdown?: string;
+  images?: Image[];
+  tables?: string[];
+  diagrams?: string[];
 }
 
 export interface Image {
   id: string;
   path?: string;
-  ocr_text: string;
+  ocr_text?: string;
+}
+
+export interface Question {
+  id: string;
+  type: string;
+  question: string;
+  options?: string[];
+  correctAnswer?: string;
+  explanation?: string;
+  difficulty?: string;
+  tags?: string[];
+}
+
+export interface Resource {
+  id: string;
+  type: string;
+  title: string;
+  url?: string;
+  description?: string;
 }
 
 export interface SectionSemantics {

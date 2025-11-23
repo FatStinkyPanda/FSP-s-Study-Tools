@@ -3,12 +3,14 @@ import * as path from 'path';
 import { DatabaseManager } from '../core/database/DatabaseManager';
 import { AIManager } from '../core/ai/AIManager';
 import { ConversationManager } from '../core/ai/ConversationManager';
+import { KnowledgeBaseManager } from '../core/knowledge/KnowledgeBaseManager';
 
 class Application {
   private mainWindow: BrowserWindow | null = null;
   private databaseManager: DatabaseManager | null = null;
   private aiManager: AIManager | null = null;
   private conversationManager: ConversationManager | null = null;
+  private knowledgeBaseManager: KnowledgeBaseManager | null = null;
 
   constructor() {
     this.initializeApp();
@@ -83,6 +85,9 @@ class Application {
 
     // Initialize Conversation Manager
     this.conversationManager = new ConversationManager(this.databaseManager);
+
+    // Initialize Knowledge Base Manager
+    this.knowledgeBaseManager = new KnowledgeBaseManager(this.databaseManager);
 
     console.log('AI system initialized');
   }
@@ -223,6 +228,70 @@ class Application {
         throw new Error('Conversation Manager not initialized');
       }
       return this.conversationManager.deleteConversation(conversationId);
+    });
+
+    // Knowledge Base operations
+    ipcMain.handle('kb:import', async (_event, xmlContent: string, filePath?: string) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.importFromXML(xmlContent, filePath);
+    });
+
+    ipcMain.handle('kb:parse', async (_event, id: number) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.parseKnowledgeBase(id);
+    });
+
+    ipcMain.handle('kb:search', async (_event, kbId: number, query: string, limit?: number) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.searchContent(kbId, query, limit);
+    });
+
+    ipcMain.handle('kb:getStatistics', async (_event, kbId: number) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.getStatistics(kbId);
+    });
+
+    ipcMain.handle('kb:delete', async (_event, id: number) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.deleteKnowledgeBase(id);
+    });
+
+    ipcMain.handle('kb:update', async (_event, id: number, xmlContent: string) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.updateContent(id, xmlContent);
+    });
+
+    ipcMain.handle('kb:export', async (_event, id: number) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.exportToXML(id);
+    });
+
+    ipcMain.handle('kb:validate', async (_event, xmlContent: string) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.validateXML(xmlContent);
+    });
+
+    ipcMain.handle('kb:getSample', async () => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.getSampleXML();
     });
 
     // Application info
