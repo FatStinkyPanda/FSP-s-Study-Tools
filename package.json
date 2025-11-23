@@ -1,0 +1,104 @@
+{
+  "name": "fsp-study-tools",
+  "version": "1.0.0",
+  "description": "AI-powered educational platform with study tools and intelligent tutoring",
+  "main": "dist/main/index.js",
+  "author": {
+    "name": "FatStinkyPanda",
+    "email": "support@fatstinkypanda.com"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "dev": "electron-forge start",
+    "start": "electron .",
+    "build": "npm run build:renderer && npm run build:main && npm run build:native",
+    "build:renderer": "webpack --config webpack.renderer.config.js",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:native": "npm run build:rust",
+    "build:rust": "cd src/core && cargo build --release",
+    "package": "electron-forge package",
+    "package:win": "electron-builder --win",
+    "make": "electron-forge make",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src --ext .ts,.tsx",
+    "lint:fix": "eslint src --ext .ts,.tsx --fix",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist build out .webpack"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.2.2",
+    "electron-squirrel-startup": "^1.0.0",
+    "electron-updater": "^6.1.7"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.2.0",
+    "@electron-forge/maker-deb": "^7.2.0",
+    "@electron-forge/maker-rpm": "^7.2.0",
+    "@electron-forge/maker-squirrel": "^7.2.0",
+    "@electron-forge/maker-zip": "^7.2.0",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.2.0",
+    "@electron-forge/plugin-webpack": "^7.2.0",
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.6",
+    "@typescript-eslint/eslint-plugin": "^6.17.0",
+    "@typescript-eslint/parser": "^6.17.0",
+    "@vercel/webpack-asset-relocator-loader": "^1.7.3",
+    "css-loader": "^6.8.1",
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1",
+    "eslint": "^8.56.0",
+    "fork-ts-checker-webpack-plugin": "^9.0.2",
+    "jest": "^29.7.0",
+    "node-loader": "^2.0.0",
+    "rimraf": "^5.0.5",
+    "style-loader": "^3.3.3",
+    "ts-jest": "^29.1.1",
+    "ts-loader": "^9.5.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4"
+  },
+  "keywords": [
+    "education",
+    "learning",
+    "ai",
+    "tutoring",
+    "study-tools",
+    "electron",
+    "desktop"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FatStinkyPanda/FSP-s-Study-Tools.git"
+  },
+  "build": {
+    "appId": "com.fatstinkypanda.fsp-study-tools",
+    "productName": "FSP's Study Tools",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "resources/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

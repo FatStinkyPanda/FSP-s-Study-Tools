@@ -1,0 +1,166 @@
+-- FSP's Study Tools - Database Schema
+-- SQLite Database Schema for Knowledge Management and Progress Tracking
+
+-- Enable foreign keys
+PRAGMA foreign_keys = ON;
+
+-- Knowledge Bases Table
+CREATE TABLE IF NOT EXISTS knowledge_bases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    xml_content TEXT NOT NULL,
+    metadata JSON,
+    CONSTRAINT valid_uuid CHECK (length(uuid) = 36)
+);
+
+-- Index for faster UUID lookups
+CREATE INDEX IF NOT EXISTS idx_kb_uuid ON knowledge_bases(uuid);
+CREATE INDEX IF NOT EXISTS idx_kb_modified ON knowledge_bases(modified_at DESC);
+
+-- Study Progress Table
+CREATE TABLE IF NOT EXISTS study_progress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kb_id INTEGER NOT NULL,
+    section_id TEXT NOT NULL,
+    user_score REAL DEFAULT 0.0 CHECK (user_score >= 0.0 AND user_score <= 1.0),
+    ai_score REAL DEFAULT 0.0 CHECK (ai_score >= 0.0 AND ai_score <= 1.0),
+    time_spent INTEGER DEFAULT 0,
+    last_viewed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+    UNIQUE(kb_id, section_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_progress_kb ON study_progress(kb_id);
+CREATE INDEX IF NOT EXISTS idx_progress_viewed ON study_progress(last_viewed DESC);
+
+-- Practice Tests Table
+CREATE TABLE IF NOT EXISTS practice_tests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kb_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('manual', 'ai_generated')),
+    questions JSON NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_tests_kb ON practice_tests(kb_id);
+CREATE INDEX IF NOT EXISTS idx_tests_created ON practice_tests(created_at DESC);
+
+-- Test Results Table
+CREATE TABLE IF NOT EXISTS test_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    test_id INTEGER NOT NULL,
+    score REAL NOT NULL CHECK (score >= 0.0 AND score <= 1.0),
+    answers JSON NOT NULL,
+    taken_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    time_taken INTEGER NOT NULL,
+    FOREIGN KEY (test_id) REFERENCES practice_tests(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_results_test ON test_results(test_id);
+CREATE INDEX IF NOT EXISTS idx_results_taken ON test_results(taken_at DESC);
+
+-- Conversations Table
+CREATE TABLE IF NOT EXISTS conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kb_id INTEGER NOT NULL,
+    messages JSON NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversations_kb ON conversations(kb_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC);
+
+-- Full-Text Search Table
+CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(
+    kb_id UNINDEXED,
+    section_id UNINDEXED,
+    content,
+    keywords,
+    tokenize='porter unicode61'
+);
+
+-- Settings Table (for application configuration)
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value JSON NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Migration History Table
+CREATE TABLE IF NOT EXISTS migrations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version INTEGER UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Triggers for automatic timestamp updates
+CREATE TRIGGER IF NOT EXISTS update_kb_modified_at
+AFTER UPDATE ON knowledge_bases
+FOR EACH ROW
+BEGIN
+    UPDATE knowledge_bases SET modified_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS update_conversation_updated_at
+AFTER UPDATE ON conversations
+FOR EACH ROW
+BEGIN
+    UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS update_settings_updated_at
+AFTER UPDATE ON settings
+FOR EACH ROW
+BEGIN
+    UPDATE settings SET updated_at = CURRENT_TIMESTAMP WHERE key = NEW.key;
+END;
+
+-- Views for common queries
+CREATE VIEW IF NOT EXISTS knowledge_base_stats AS
+SELECT
+    kb.id,
+    kb.title,
+    kb.created_at,
+    COUNT(DISTINCT sp.id) as sections_studied,
+    AVG(sp.user_score) as avg_user_score,
+    AVG(sp.ai_score) as avg_ai_score,
+    SUM(sp.time_spent) as total_time_spent,
+    COUNT(DISTINCT pt.id) as test_count,
+    COUNT(DISTINCT c.id) as conversation_count
+FROM knowledge_bases kb
+LEFT JOIN study_progress sp ON kb.id = sp.kb_id
+LEFT JOIN practice_tests pt ON kb.id = pt.kb_id
+LEFT JOIN conversations c ON kb.id = c.kb_id
+GROUP BY kb.id, kb.title, kb.created_at;
+
+CREATE VIEW IF NOT EXISTS recent_activity AS
+SELECT
+    'study' as activity_type,
+    kb_id,
+    section_id as reference,
+    last_viewed as timestamp
+FROM study_progress
+UNION ALL
+SELECT
+    'test' as activity_type,
+    test_id as kb_id,
+    CAST(id AS TEXT) as reference,
+    taken_at as timestamp
+FROM test_results
+UNION ALL
+SELECT
+    'conversation' as activity_type,
+    kb_id,
+    CAST(id AS TEXT) as reference,
+    updated_at as timestamp
+FROM conversations
+ORDER BY timestamp DESC
+LIMIT 100;
