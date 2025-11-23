@@ -1,10 +1,14 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import { DatabaseManager } from '../core/database/DatabaseManager';
+import { AIManager } from '../core/ai/AIManager';
+import { ConversationManager } from '../core/ai/ConversationManager';
 
 class Application {
   private mainWindow: BrowserWindow | null = null;
   private databaseManager: DatabaseManager | null = null;
+  private aiManager: AIManager | null = null;
+  private conversationManager: ConversationManager | null = null;
 
   constructor() {
     this.initializeApp();
@@ -43,6 +47,9 @@ class Application {
       // Initialize database
       await this.initializeDatabase();
 
+      // Initialize AI system
+      await this.initializeAI();
+
       // Create main window
       this.createMainWindow();
 
@@ -64,6 +71,20 @@ class Application {
     await this.databaseManager.initialize();
 
     console.log(`Database initialized at: ${dbPath}`);
+  }
+
+  private async initializeAI(): Promise<void> {
+    if (!this.databaseManager) {
+      throw new Error('Database must be initialized before AI');
+    }
+
+    // Initialize AI Manager (configuration will be loaded from database)
+    this.aiManager = new AIManager();
+
+    // Initialize Conversation Manager
+    this.conversationManager = new ConversationManager(this.databaseManager);
+
+    console.log('AI system initialized');
   }
 
   private createMainWindow(): void {
@@ -135,6 +156,73 @@ class Application {
         xml_content: string;
         metadata?: Record<string, unknown>;
       });
+    });
+
+    // AI operations
+    ipcMain.handle('ai:completion', async (_event, request: unknown) => {
+      if (!this.aiManager) {
+        throw new Error('AI Manager not initialized');
+      }
+      return this.aiManager.createCompletion(request as never);
+    });
+
+    ipcMain.handle('ai:listModels', async (_event, providerType?: string) => {
+      if (!this.aiManager) {
+        throw new Error('AI Manager not initialized');
+      }
+      const models = await this.aiManager.listModels(providerType as never);
+      return Object.fromEntries(models);
+    });
+
+    ipcMain.handle('ai:validateProviders', async () => {
+      if (!this.aiManager) {
+        throw new Error('AI Manager not initialized');
+      }
+      const results = await this.aiManager.validateProviders();
+      return Object.fromEntries(results);
+    });
+
+    // Conversation operations
+    ipcMain.handle('conversation:create', async (_event, kbId: number, systemMessage?: string) => {
+      if (!this.conversationManager) {
+        throw new Error('Conversation Manager not initialized');
+      }
+      return this.conversationManager.createConversation(kbId, systemMessage);
+    });
+
+    ipcMain.handle('conversation:load', async (_event, conversationId: number) => {
+      if (!this.conversationManager) {
+        throw new Error('Conversation Manager not initialized');
+      }
+      return this.conversationManager.loadConversation(conversationId);
+    });
+
+    ipcMain.handle('conversation:addMessage', async (_event, conversationId: number, message: unknown) => {
+      if (!this.conversationManager) {
+        throw new Error('Conversation Manager not initialized');
+      }
+      await this.conversationManager.addMessage(conversationId, message as never);
+    });
+
+    ipcMain.handle('conversation:getMessages', async (_event, conversationId: number, limit?: number) => {
+      if (!this.conversationManager) {
+        throw new Error('Conversation Manager not initialized');
+      }
+      return this.conversationManager.getMessages(conversationId, limit);
+    });
+
+    ipcMain.handle('conversation:list', async (_event, kbId: number, limit?: number) => {
+      if (!this.conversationManager) {
+        throw new Error('Conversation Manager not initialized');
+      }
+      return this.conversationManager.listConversations(kbId, limit);
+    });
+
+    ipcMain.handle('conversation:delete', async (_event, conversationId: number) => {
+      if (!this.conversationManager) {
+        throw new Error('Conversation Manager not initialized');
+      }
+      return this.conversationManager.deleteConversation(conversationId);
     });
 
     // Application info
