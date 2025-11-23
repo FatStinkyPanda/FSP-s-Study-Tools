@@ -189,3 +189,4 @@ Icon
 # Project specific
 .openmemory-local/
 enforcement-status.json.bak
+*.d.ts

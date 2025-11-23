@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>FSP's Study Tools</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #ffffff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 800px;
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 40px;
+      box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+
+    h1 {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      text-align: center;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    p {
+      font-size: 1.2rem;
+      line-height: 1.6;
+      margin-bottom: 1rem;
+      text-align: center;
+      opacity: 0.95;
+    }
+
+    .status {
+      margin-top: 30px;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+      text-align: center;
+    }
+
+    .status-item {
+      margin: 10px 0;
+      font-size: 0.9rem;
+    }
+
+    .status-label {
+      font-weight: bold;
+      color: #FFD700;
+    }
+
+    .pulse {
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    .features {
+      margin-top: 30px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+    }
+
+    .feature {
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      text-align: center;
+      transition: transform 0.2s;
+    }
+
+    .feature:hover {
+      transform: translateY(-5px);
+    }
+
+    .feature-icon {
+      font-size: 2rem;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="pulse">FSP's Study Tools</h1>
+    <p>AI-Powered Aviation Study Platform</p>
+    <p>Your intelligent companion for mastering aviation knowledge</p>
+
+    <div class="status">
+      <div class="status-item">
+        <span class="status-label">Status:</span> Application Running
+      </div>
+      <div class="status-item">
+        <span class="status-label">Phase:</span> Core Development
+      </div>
+      <div class="status-item">
+        <span class="status-label">Version:</span> 1.0.0 (Development)
+      </div>
+    </div>
+
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">[DB]</div>
+        <div>Database Ready</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">[AI]</div>
+        <div>AI Integration</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">[KB]</div>
+        <div>Knowledge Base (Coming Soon)</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">[UI]</div>
+        <div>UI/UX (Coming Soon)</div>
+      </div>
+    </div>
+
+    <p style="margin-top: 30px; font-size: 0.9rem; opacity: 0.7;">
+      Phase 2 Complete: Multi-provider AI integration with OpenAI, Anthropic, Google, and OpenRouter support
+    </p>
+  </div>
+
+  <script>
+    // Test Electron API
+    if (window.electronAPI) {
+      console.log('Electron API loaded successfully');
+
+      // Get app version
+      window.electronAPI.invoke('app:version').then(version => {
+        console.log('App version:', version);
+      }).catch(err => {
+        console.error('Failed to get app version:', err);
+      });
+    } else {
+      console.error('Electron API not available');
+    }
+  </script>
+</body>
+</html>
