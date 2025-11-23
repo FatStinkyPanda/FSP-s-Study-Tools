@@ -1,0 +1,113 @@
+{
+  "version": "1.0.0",
+  "projectName": "FSP's Study Tools",
+  "initialized": true,
+  "initializationDate": "2025-11-23T19:00:00Z",
+  "mcpEnforcement": {
+    "enabled": true,
+    "hooksInstalled": true,
+    "hooksPath": ".git/hooks",
+    "enforcementSystemPath": ".ai-agents/enforcement"
+  },
+  "complianceThresholds": {
+    "commit": 80,
+    "push": 70,
+    "target": 90,
+    "session": 70
+  },
+  "aiAgentInstructions": {
+    "recognitionMarker": ".mcp-enforcement-init",
+    "enforcementActive": true,
+    "mandatoryToolUsage": {
+      "sessionStart": [
+        "query_memory",
+        "get_history",
+        "get_patterns",
+        "get_decisions",
+        "check_compliance"
+      ],
+      "afterCodeChange": [
+        "record_action"
+      ],
+      "afterDecision": [
+        "record_decision"
+      ],
+      "beforeCommit": [
+        "record_action",
+        "check_compliance",
+        "validate_all"
+      ],
+      "beforePush": [
+        "check_compliance",
+        "validate_all",
+        "run_autonomous_intelligence"
+      ],
+      "periodic": [
+        "check_compliance"
+      ]
+    },
+    "behavior": {
+      "autoRecordActions": true,
+      "autoCheckCompliance": true,
+      "followEnforcement": true,
+      "blockNonCompliantCommits": true,
+      "blockNonCompliantPushes": true
+    }
+  },
+  "openMemory": {
+    "enabled": true,
+    "url": "http://localhost:8080",
+    "projectName": "FSP's Study Tools",
+    "globalDir": "C:\\Users\\dbiss\\.openmemory-global",
+    "fallbackMode": "local"
+  },
+  "gitHooks": {
+    "preCommit": {
+      "enabled": true,
+      "path": ".git/hooks/pre-commit",
+      "checks": [
+        "ai-agents-system",
+        "openmemory-connection",
+        "staged-changes",
+        "agent-activity",
+        "state-updates"
+      ]
+    },
+    "commitMsg": {
+      "enabled": true,
+      "path": ".git/hooks/commit-msg",
+      "minLength": 10
+    },
+    "prePush": {
+      "enabled": true,
+      "path": ".git/hooks/pre-push",
+      "checks": [
+        "compliance-score",
+        "validation",
+        "autonomous-intelligence"
+      ]
+    }
+  },
+  "project": {
+    "type": "ai-agent-enforcement-system",
+    "description": "AI-powered educational platform with study tools and tutoring",
+    "techStack": [
+      "Electron",
+      "TypeScript",
+      "React/Vue",
+      "Rust",
+      "SQLite",
+      "ONNX",
+      "llama.cpp"
+    ],
+    "developmentPhase": "phase-1-planning",
+    "estimatedDuration": "24-weeks"
+  },
+  "notes": [
+    "This project uses the .ai-agents enforcement system",
+    "OpenMemory backend must be running on port 8080 for full functionality",
+    "Git hooks are active and will validate commits/pushes",
+    "Compliance score must be >= 80 for commits, >= 70 for pushes",
+    "All code changes must be recorded with record_action tool"
+  ]
+}
