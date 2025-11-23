@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
+import StudySession from './StudySession';
 
 interface ElectronAPI {
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
@@ -221,19 +222,7 @@ function App() {
         )}
 
         {currentView === 'study' && (
-          <div className="view study-view">
-            <h2>Study Session</h2>
-            <div className="empty-state">
-              <p>Study interface coming soon!</p>
-              <p>Features:</p>
-              <ul>
-                <li>Interactive learning sessions</li>
-                <li>AI-powered tutoring</li>
-                <li>Practice tests</li>
-                <li>Progress tracking</li>
-              </ul>
-            </div>
-          </div>
+          <StudySession onExit={() => setCurrentView('home')} />
         )}
 
         {currentView === 'settings' && (
