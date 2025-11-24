@@ -86,8 +86,19 @@ class Application {
     // Initialize Settings Manager
     this.settingsManager = new SettingsManager(this.databaseManager);
 
-    // Initialize AI Manager (configuration will be loaded from database)
+    // Initialize AI Manager
     this.aiManager = new AIManager();
+
+    // Configure AI Manager with settings from database
+    const settings = this.settingsManager.getAll();
+    this.aiManager.configureFromSettings(settings);
+
+    const configuredProviders = this.aiManager.getConfiguredProviders();
+    if (configuredProviders.length > 0) {
+      console.log(`AI providers configured: ${configuredProviders.join(', ')}`);
+    } else {
+      console.log('No AI providers configured - please add API keys in Settings');
+    }
 
     // Initialize Conversation Manager
     this.conversationManager = new ConversationManager(this.databaseManager);
@@ -212,7 +223,60 @@ class Application {
       if (!this.conversationManager) {
         throw new Error('Conversation Manager not initialized');
       }
+      if (!this.aiManager) {
+        throw new Error('AI Manager not initialized');
+      }
+
+      // Add user message to conversation
       await this.conversationManager.addMessage(conversationId, message as never);
+
+      // Check if any AI providers are configured
+      const configuredProviders = this.aiManager.getConfiguredProviders();
+      if (configuredProviders.length === 0) {
+        throw new Error('No AI providers configured. Please add an API key in Settings.');
+      }
+
+      try {
+        // Get conversation messages
+        const messages = await this.conversationManager.getMessages(conversationId);
+
+        // Call AI provider
+        const response = await this.aiManager.createCompletion({
+          messages: messages as never,
+        });
+
+        // Extract assistant message from response
+        const assistantMessage = {
+          role: 'assistant' as const,
+          content: response.content,
+        };
+
+        // Add AI response to conversation
+        await this.conversationManager.addMessage(conversationId, assistantMessage as never);
+
+        // Return the response
+        return {
+          success: true,
+          message: assistantMessage,
+          usage: response.usage,
+        };
+      } catch (error) {
+        console.error('AI completion failed:', error);
+
+        // Add error message to conversation
+        const errorMessage = {
+          role: 'assistant' as const,
+          content: `I apologize, but I encountered an error: ${(error as Error).message}`,
+        };
+
+        await this.conversationManager.addMessage(conversationId, errorMessage as never);
+
+        return {
+          success: false,
+          message: errorMessage,
+          error: (error as Error).message,
+        };
+      }
     });
 
     ipcMain.handle('conversation:getMessages', async (_event, conversationId: number, limit?: number) => {
@@ -366,7 +430,20 @@ class Application {
       if (!this.settingsManager) {
         throw new Error('Settings Manager not initialized');
       }
+      if (!this.aiManager) {
+        throw new Error('AI Manager not initialized');
+      }
+
+      // Update settings in database
       this.settingsManager.updateAll(settings as any);
+
+      // Reconfigure AI providers with new settings
+      const updatedSettings = this.settingsManager.getAll();
+      this.aiManager.configureFromSettings(updatedSettings);
+
+      const configuredProviders = this.aiManager.getConfiguredProviders();
+      console.log(`AI providers reconfigured: ${configuredProviders.join(', ') || 'none'}`);
+
       return true;
     });
 

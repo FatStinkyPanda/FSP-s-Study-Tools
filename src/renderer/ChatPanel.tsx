@@ -97,12 +97,17 @@ ${currentTopic ? `Current topic: ${currentTopic}` : ''}`;
           role: 'user',
           content: contextualMessage
         }
-      ) as { role: string; content: string };
+      ) as { success: boolean; message: { role: string; content: string }; error?: string };
+
+      // Check for errors
+      if (!response.success && response.error) {
+        console.error('AI response error:', response.error);
+      }
 
       // Add AI response
       const assistantMessage: Message = {
         role: 'assistant',
-        content: response.content,
+        content: response.message.content,
         timestamp: new Date()
       };
 

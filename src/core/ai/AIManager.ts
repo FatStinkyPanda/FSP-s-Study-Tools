@@ -274,4 +274,90 @@ export class AIManager {
       this.defaultMaxTokens = settings.maxTokens;
     }
   }
+
+  /**
+   * Configure providers from app settings
+   * This method loads API keys from settings and initializes available providers
+   */
+  configureFromSettings(settings: {
+    openai_api_key?: string;
+    anthropic_api_key?: string;
+    google_api_key?: string;
+    openrouter_api_key?: string;
+    default_ai_provider?: 'openai' | 'anthropic' | 'google' | 'openrouter';
+    default_model?: string;
+    temperature?: number;
+    max_tokens?: number;
+  }): void {
+    // Clear existing providers
+    this.providers.clear();
+
+    // Configure OpenAI if API key present
+    if (settings.openai_api_key && settings.openai_api_key.length > 0) {
+      this.addProvider({
+        type: 'openai',
+        apiKey: settings.openai_api_key,
+        enabled: true,
+      });
+    }
+
+    // Configure Anthropic if API key present
+    if (settings.anthropic_api_key && settings.anthropic_api_key.length > 0) {
+      this.addProvider({
+        type: 'anthropic',
+        apiKey: settings.anthropic_api_key,
+        enabled: true,
+      });
+    }
+
+    // Configure Google AI if API key present
+    if (settings.google_api_key && settings.google_api_key.length > 0) {
+      this.addProvider({
+        type: 'google',
+        apiKey: settings.google_api_key,
+        enabled: true,
+      });
+    }
+
+    // Configure OpenRouter if API key present
+    if (settings.openrouter_api_key && settings.openrouter_api_key.length > 0) {
+      this.addProvider({
+        type: 'openrouter',
+        apiKey: settings.openrouter_api_key,
+        enabled: true,
+      });
+    }
+
+    // Set default provider if specified, otherwise use first available
+    if (settings.default_ai_provider && this.providers.has(settings.default_ai_provider)) {
+      this.defaultProvider = settings.default_ai_provider;
+    } else {
+      // Use first available provider as default
+      const availableProviders: AIProviderType[] = ['openai', 'anthropic', 'google', 'openrouter'];
+      for (const provider of availableProviders) {
+        if (this.providers.has(provider)) {
+          this.defaultProvider = provider;
+          break;
+        }
+      }
+    }
+
+    // Update other defaults if provided
+    if (settings.default_model) {
+      this.defaultModel = settings.default_model;
+    }
+    if (settings.temperature !== undefined) {
+      this.defaultTemperature = settings.temperature;
+    }
+    if (settings.max_tokens !== undefined) {
+      this.defaultMaxTokens = settings.max_tokens;
+    }
+  }
+
+  /**
+   * Get list of configured providers
+   */
+  getConfiguredProviders(): AIProviderType[] {
+    return Array.from(this.providers.keys());
+  }
 }
