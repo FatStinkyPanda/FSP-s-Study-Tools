@@ -37,8 +37,18 @@ interface KnowledgeBase {
   metadata?: Record<string, unknown>;
 }
 
+interface UserProgress {
+  totalSections: number;
+  completedSections: number;
+  averageScore: number;
+  studyStreak: number;
+  sectionsNeedingReview: number;
+}
+
 interface StudySessionProps {
   onExit: () => void;
+  initialKbId?: number | null;
+  initialSectionId?: string | null;
 }
 
 interface ElectronAPI {
@@ -51,9 +61,10 @@ declare global {
   }
 }
 
-function StudySession({ onExit }: StudySessionProps) {
+function StudySession({ onExit, initialKbId, initialSectionId }: StudySessionProps) {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
-  const [selectedKB, setSelectedKB] = useState<number | null>(null);
+  const [selectedKB, setSelectedKB] = useState<number | null>(initialKbId || null);
+  const [targetSectionId, setTargetSectionId] = useState<string | null>(initialSectionId || null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -67,6 +78,8 @@ function StudySession({ onExit }: StudySessionProps) {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState<string>('');
+  const [userProgress, setUserProgress] = useState<UserProgress | null>(null);
+  const [currentSectionContent, setCurrentSectionContent] = useState<string>('');
 
   useEffect(() => {
     loadKnowledgeBases();
@@ -112,6 +125,32 @@ function StudySession({ onExit }: StudySessionProps) {
       console.error('Failed to load knowledge bases:', error);
       showError('Failed to load knowledge bases. Please try again.');
       setLoading(false);
+    }
+  };
+
+  const fetchUserProgress = async (kbId: number) => {
+    try {
+      // Get all progress stats
+      const [stats, streak, needingReview] = await Promise.all([
+        window.electronAPI.invoke('progress:getStats', kbId) as Promise<{
+          total_sections: number;
+          completed_sections: number;
+          average_score: number;
+        }>,
+        window.electronAPI.invoke('progress:getStreak') as Promise<number>,
+        window.electronAPI.invoke('progress:getNeedingReview', kbId, 7) as Promise<Array<unknown>>
+      ]);
+
+      setUserProgress({
+        totalSections: stats.total_sections || 0,
+        completedSections: stats.completed_sections || 0,
+        averageScore: stats.average_score || 0,
+        studyStreak: streak || 0,
+        sectionsNeedingReview: (needingReview || []).length
+      });
+    } catch (error) {
+      console.error('Failed to fetch user progress:', error);
+      // Don't block the session, just continue without progress context
     }
   };
 
@@ -215,6 +254,10 @@ function StudySession({ onExit }: StudySessionProps) {
       setScore(0);
       setAnsweredQuestions(0);
       setLoading(false);
+
+      // Fetch user progress for context-aware AI tutoring
+      fetchUserProgress(kbId);
+
       showError(`Session started with ${shuffled.length} questions!`, 'info');
     } catch (error) {
       console.error('Failed to start session:', error);
@@ -602,6 +645,9 @@ function StudySession({ onExit }: StudySessionProps) {
         currentQuestion={currentQuestion.question}
         currentTopic={currentQuestion.tags?.[0]}
         knowledgeBaseId={selectedKB}
+        sectionContent={currentSectionContent}
+        userProgress={userProgress || undefined}
+        kbTitle={knowledgeBases.find(kb => kb.id === selectedKB)?.title}
       />
     </div>
   );

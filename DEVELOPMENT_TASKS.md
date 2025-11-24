@@ -1,7 +1,7 @@
 # FSP's Study Tools - Development Tasks
 
 **Last Updated:** 2024-11-24
-**Project Status:** ~75% Complete
+**Project Status:** ~85% Complete
 **Current Phase:** Phase 5 - UI/UX Development (Near Completion)
 
 ---
@@ -49,7 +49,7 @@
 - [x] Study streak tracking
 - [ ] Recommendation engine
 
-### Phase 5: UI/UX Development [80% Complete]
+### Phase 5: UI/UX Development [95% Complete]
 - [x] Main app navigation
 - [x] KB Editor component with structure management
 - [x] KB Editor Save functionality (XML conversion)
@@ -58,9 +58,10 @@
 - [x] Chat panel integration
 - [x] Learning Dashboard with visualizations (stats cards, activity, velocity)
 - [x] AI question generation UI with progress overlay
+- [x] Search results UI with navigation
+- [x] Theme switching (dark/light/auto)
+- [x] Context-aware AI tutoring (includes user progress in prompts)
 - [ ] Progress charts and graphs (beyond basic stats)
-- [ ] Search results UI with navigation
-- [ ] Theme switching (dark/light)
 - [ ] KB structure visualization
 
 ### Phase 6: Polish & Packaging [40% Complete]
@@ -107,34 +108,39 @@
 - Fixed CSP (source-map devtool)
 - Fixed preload and HTML paths
 
+### 4. Search Results UI [COMPLETE]
+**File:** `src/renderer/components/SearchResults.tsx`
+**Completed Features:**
+- Search input with KB selector dropdown
+- Results list with highlighted snippets (FTS5 mark tags)
+- Click to navigate to section
+- Relevance scoring display
+- Integration with header search button and modal
+
+### 5. Theme System [COMPLETE]
+**Files modified:** `src/renderer/App.css`, `src/renderer/App.tsx`
+**Completed Features:**
+- CSS custom properties (variables) for all colors
+- Dark theme (default) and Light theme
+- Auto mode (follows system preference)
+- Theme selector in Settings panel
+- All UI components updated to use CSS variables
+
+### 6. Conversation Context Awareness [COMPLETE]
+**Files modified:** `src/renderer/ChatPanel.tsx`, `src/renderer/StudySession.tsx`
+**Completed Features:**
+- User progress included in AI system prompt
+- KB title and current topic context
+- Personalized tutoring guidance based on score/streak
+- Section content context (when available)
+
 ---
 
 ## PENDING TASKS (Priority Order)
 
-### HIGH PRIORITY
-
-#### 1. Search Results UI
-**New file:** `src/renderer/components/SearchResults.tsx`
-**Features needed:**
-- Search input in header
-- Results list with snippets
-- Click to navigate to section
-- Highlight search terms
-- Filter by module/chapter
-
 ### MEDIUM PRIORITY
 
-#### 2. Conversation Context Awareness
-**Files to modify:**
-- `src/core/ai/ConversationManager.ts`
-- `src/renderer/ChatPanel.tsx`
-
-**Implementation:**
-- Include user progress in system prompt
-- Reference current section content
-- Track conversation topics
-
-#### 3. Auto-Update UI
+#### 1. Auto-Update UI
 **New file:** `src/renderer/components/UpdateNotification.tsx`
 **Features needed:**
 - Update available banner
@@ -142,27 +148,16 @@
 - Install prompt
 - Release notes display
 
-#### 4. Theme System
-**Files to modify:**
-- `src/renderer/App.css`
-- `src/renderer/App.tsx`
-- `src/core/settings/SettingsManager.ts`
-
-**Implementation:**
-- CSS variables for theming
-- Dark/light/auto modes
-- Persist preference
-
 ### LOW PRIORITY
 
-#### 5. LocalAIProvider Implementation
+#### 2. LocalAIProvider Implementation
 **File:** `src/core/ai/LocalAIProvider.ts`
 **Dependencies:**
 - ONNX Runtime
 - llama.cpp bindings
 - Model download system
 
-#### 6. Vector Embeddings
+#### 3. Vector Embeddings
 **New file:** `src/core/indexer/SemanticIndexer.ts`
 **Features:**
 - Generate embeddings from content
@@ -170,14 +165,14 @@
 - Cosine similarity search
 - Integration with KnowledgeBaseManager
 
-#### 7. Testing Suite
+#### 4. Testing Suite
 **Directory:** `src/__tests__/`
 **Coverage needed:**
 - Unit tests for core modules
 - Integration tests for IPC
 - E2E tests for workflows
 
-#### 8. Documentation
+#### 5. Documentation
 **Files to create:**
 - `docs/API.md`
 - `docs/USER_GUIDE.md`
@@ -231,8 +226,8 @@ src/
     components/
       KBEditor.tsx         [COMPLETE]
       KBEditor.css         [COMPLETE]
-      Dashboard.tsx        [COMPLETE - new]
-      SearchResults.tsx    [NOT STARTED]
+      Dashboard.tsx        [COMPLETE]
+      SearchResults.tsx    [COMPLETE]
       UpdateNotification.tsx[NOT STARTED]
   shared/
     types.ts               [COMPLETE]
@@ -308,13 +303,14 @@ All handlers are in `src/main/index.ts`:
 1. Run `npm run build` to rebuild
 2. Run `npm start` to launch app
 3. Continue with remaining tasks:
-   - Search Results UI (HIGH PRIORITY)
-   - Conversation Context Awareness (MEDIUM)
-   - Auto-Update UI (MEDIUM)
-   - Theme System (MEDIUM)
+   - Auto-Update UI (MEDIUM PRIORITY)
+   - Progress charts and graphs (LOW PRIORITY)
+   - KB structure visualization (LOW PRIORITY)
+   - LocalAIProvider (LOW PRIORITY)
 
-4. Test AI question generation with configured API key
-5. Test Learning Dashboard with imported KB
+4. Test theme switching in Settings
+5. Test AI tutor context awareness in Study Session
+6. Test search functionality via header search button
 
 ---
 

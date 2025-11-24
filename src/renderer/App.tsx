@@ -3,6 +3,7 @@ import './App.css';
 import StudySession from './StudySession';
 import KBEditor from './components/KBEditor';
 import Dashboard from './components/Dashboard';
+import SearchResults from './components/SearchResults';
 
 interface ElectronAPI {
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
@@ -139,10 +140,30 @@ function App() {
   const [currentView, setCurrentView] = useState<'home' | 'browse' | 'study' | 'editor' | 'settings' | 'dashboard'>('home');
   const [settings, setSettings] = useState<AppSettings>({});
   const [settingsSaved, setSettingsSaved] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [studyKbId, setStudyKbId] = useState<number | null>(null);
+  const [studySectionId, setStudySectionId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Apply theme when settings change
+  useEffect(() => {
+    applyTheme(settings.theme || 'dark');
+  }, [settings.theme]);
+
+  const applyTheme = (theme: string) => {
+    const root = document.documentElement;
+
+    if (theme === 'auto') {
+      // Check system preference
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      root.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+    } else {
+      root.setAttribute('data-theme', theme);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -157,6 +178,9 @@ function App() {
       // Load settings
       const loadedSettings = await window.electronAPI.invoke('settings:getAll') as AppSettings;
       setSettings(loadedSettings);
+
+      // Apply theme immediately after loading
+      applyTheme(loadedSettings.theme || 'dark');
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -180,6 +204,13 @@ function App() {
       ...prev,
       [key]: value
     }));
+  };
+
+  const handleSearchNavigate = (kbId: number, sectionId: string) => {
+    setStudyKbId(kbId);
+    setStudySectionId(sectionId);
+    setShowSearch(false);
+    setCurrentView('study');
   };
 
   const getSampleXML = async () => {
@@ -225,6 +256,19 @@ function App() {
       <header className="app-header">
         <div className="header-content">
           <h1>FSP's Study Tools</h1>
+          <div className="header-actions">
+            <button
+              className="header-search-btn"
+              onClick={() => setShowSearch(true)}
+              title="Search Knowledge Base (Ctrl+K)"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+              Search
+            </button>
+          </div>
           <div className="header-meta">
             <span className="version">v{appVersion}</span>
             <span className="status">Development Mode</span>
@@ -373,7 +417,15 @@ function App() {
         )}
 
         {currentView === 'study' && (
-          <StudySession onExit={() => setCurrentView('home')} />
+          <StudySession
+            onExit={() => {
+              setCurrentView('home');
+              setStudyKbId(null);
+              setStudySectionId(null);
+            }}
+            initialKbId={studyKbId}
+            initialSectionId={studySectionId}
+          />
         )}
 
         {currentView === 'editor' && (
@@ -420,6 +472,35 @@ function App() {
                   Settings saved successfully
                 </div>
               )}
+            </div>
+
+            <div className="settings-section">
+              <h3>Appearance</h3>
+              <p className="settings-description">
+                Customize the look and feel of the application.
+              </p>
+
+              <div className="setting-item">
+                <label htmlFor="theme-select">
+                  Theme
+                  <span className="setting-status">
+                    {settings.theme === 'auto' ? ' (System)' : settings.theme === 'light' ? ' (Light)' : ' (Dark)'}
+                  </span>
+                </label>
+                <select
+                  id="theme-select"
+                  value={settings.theme || 'dark'}
+                  onChange={(e) => handleSettingChange('theme', e.target.value)}
+                  className="theme-select"
+                >
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                  <option value="auto">Auto (System)</option>
+                </select>
+                <span className="setting-hint">
+                  Choose your preferred color theme. Auto follows your system settings.
+                </span>
+              </div>
             </div>
 
             <div className="settings-section">
@@ -538,6 +619,18 @@ function App() {
           Phase 5: UI/UX Development | Database + AI + Knowledge Base Engine Complete
         </p>
       </footer>
+
+      {/* Search Modal */}
+      {showSearch && (
+        <div className="search-modal-overlay" onClick={() => setShowSearch(false)}>
+          <div className="search-modal" onClick={(e) => e.stopPropagation()}>
+            <SearchResults
+              onNavigateToSection={handleSearchNavigate}
+              onClose={() => setShowSearch(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

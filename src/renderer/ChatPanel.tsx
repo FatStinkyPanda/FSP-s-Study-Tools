@@ -6,12 +6,23 @@ interface Message {
   timestamp: Date;
 }
 
+interface UserProgress {
+  totalSections: number;
+  completedSections: number;
+  averageScore: number;
+  studyStreak: number;
+  sectionsNeedingReview: number;
+}
+
 interface ChatPanelProps {
   isOpen: boolean;
   onToggle: () => void;
   currentQuestion?: string;
   currentTopic?: string;
   knowledgeBaseId?: number;
+  sectionContent?: string;
+  userProgress?: UserProgress;
+  kbTitle?: string;
 }
 
 interface ElectronAPI {
@@ -24,7 +35,16 @@ declare global {
   }
 }
 
-function ChatPanel({ isOpen, onToggle, currentQuestion, currentTopic, knowledgeBaseId }: ChatPanelProps) {
+function ChatPanel({
+  isOpen,
+  onToggle,
+  currentQuestion,
+  currentTopic,
+  knowledgeBaseId,
+  sectionContent,
+  userProgress,
+  kbTitle
+}: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -71,9 +91,60 @@ function ChatPanel({ isOpen, onToggle, currentQuestion, currentTopic, knowledgeB
         return;
       }
 
-      const systemMessage = `You are an AI tutor helping a student learn from their study materials.
-Be concise, clear, and encouraging. Focus on helping them understand concepts, not just giving answers.
-${currentTopic ? `Current topic: ${currentTopic}` : ''}`;
+      // Build context-aware system message
+      const buildSystemMessage = () => {
+        let message = `You are an AI tutor helping a student learn from their study materials.
+Be concise, clear, and encouraging. Focus on helping them understand concepts, not just giving answers.`;
+
+        // Add knowledge base context
+        if (kbTitle) {
+          message += `\n\nStudy Material: "${kbTitle}"`;
+        }
+
+        // Add topic context
+        if (currentTopic) {
+          message += `\nCurrent topic: ${currentTopic}`;
+        }
+
+        // Add user progress context for personalized tutoring
+        if (userProgress) {
+          const completionPercent = userProgress.totalSections > 0
+            ? Math.round((userProgress.completedSections / userProgress.totalSections) * 100)
+            : 0;
+
+          message += `\n\n--- Student Progress Context ---`;
+          message += `\nOverall completion: ${completionPercent}% (${userProgress.completedSections}/${userProgress.totalSections} sections)`;
+          message += `\nAverage score: ${Math.round(userProgress.averageScore)}%`;
+          message += `\nCurrent study streak: ${userProgress.studyStreak} days`;
+
+          if (userProgress.sectionsNeedingReview > 0) {
+            message += `\nSections needing review: ${userProgress.sectionsNeedingReview}`;
+          }
+
+          // Add personalized guidance based on progress
+          if (userProgress.averageScore < 60) {
+            message += `\n\nNote: This student has a lower average score. Be extra patient, break concepts down further, and use more examples.`;
+          } else if (userProgress.averageScore >= 85) {
+            message += `\n\nNote: This student is performing well. You can be more concise and challenge them with deeper questions.`;
+          }
+
+          if (userProgress.studyStreak >= 7) {
+            message += `\nThis student has been studying consistently - acknowledge their dedication when appropriate.`;
+          }
+        }
+
+        // Add current section content for context
+        if (sectionContent) {
+          const truncatedContent = sectionContent.length > 2000
+            ? sectionContent.substring(0, 2000) + '...'
+            : sectionContent;
+          message += `\n\n--- Current Section Content ---\n${truncatedContent}`;
+        }
+
+        return message;
+      };
+
+      const systemMessage = buildSystemMessage();
 
       const convId = await window.electronAPI.invoke(
         'conversation:create',
