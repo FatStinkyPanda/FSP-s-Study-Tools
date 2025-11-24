@@ -4,6 +4,7 @@ import StudySession from './StudySession';
 import KBEditor from './components/KBEditor';
 import Dashboard from './components/Dashboard';
 import SearchResults from './components/SearchResults';
+import UpdateNotification from './components/UpdateNotification';
 
 interface ElectronAPI {
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
@@ -631,6 +632,9 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Update Notification */}
+      <UpdateNotification />
     </div>
   );
 }
