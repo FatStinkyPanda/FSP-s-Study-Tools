@@ -1,15 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import ChatPanel from './ChatPanel';
 
 interface Question {
   id: string;
   type: string;
   question: string;
-  options?: string[];
+  options?: string[] | Record<string, string>;
   correctAnswer?: string;
   explanation?: string;
   difficulty?: string;
   tags?: string[];
+  sectionId?: string;
+}
+
+interface GeneratedQuestion {
+  id: string;
+  question: string;
+  type: string;
+  correctAnswer: string;
+  options: Record<string, string>;
+  sectionId: string;
+  explanation?: string;
+}
+
+interface ErrorState {
+  message: string;
+  type: 'error' | 'warning' | 'info';
 }
 
 interface KnowledgeBase {
@@ -46,9 +62,45 @@ function StudySession({ onExit }: StudySessionProps) {
   const [answeredQuestions, setAnsweredQuestions] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [error, setError] = useState<ErrorState | null>(null);
+  const [sessionStartTime, setSessionStartTime] = useState<number>(0);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState<string>('');
 
   useEffect(() => {
     loadKnowledgeBases();
+  }, []);
+
+  // Auto-dismiss error after 5 seconds
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (showResult && e.key === 'Enter') {
+        nextQuestion();
+      } else if (!showResult && selectedAnswer && e.key === 'Enter') {
+        submitAnswer();
+      } else if (e.key >= '1' && e.key <= '4' && currentQuestion?.options) {
+        const index = parseInt(e.key) - 1;
+        if (index < currentQuestion.options.length && !showResult) {
+          handleAnswerSelect(currentQuestion.options[index]);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [showResult, selectedAnswer, currentQuestionIndex]);
+
+  const showError = useCallback((message: string, type: 'error' | 'warning' | 'info' = 'error') => {
+    setError({ message, type });
   }, []);
 
   const loadKnowledgeBases = async () => {
@@ -58,6 +110,7 @@ function StudySession({ onExit }: StudySessionProps) {
       setLoading(false);
     } catch (error) {
       console.error('Failed to load knowledge bases:', error);
+      showError('Failed to load knowledge bases. Please try again.');
       setLoading(false);
     }
   };
@@ -65,29 +118,93 @@ function StudySession({ onExit }: StudySessionProps) {
   const startSession = async (kbId: number) => {
     try {
       setLoading(true);
+      setError(null);
       setSelectedKB(kbId);
+      setSessionStartTime(Date.now());
 
-      // Parse KB to get questions
-      const parsed = await window.electronAPI.invoke('kb:parse', kbId) as {
-        modules: Array<{
-          chapters: Array<{
-            sections: Array<{
-              questions?: Question[];
-            }>;
-          }>;
+      // First, try to get existing practice tests for this KB
+      let allQuestions: Question[] = [];
+
+      try {
+        const tests = await window.electronAPI.invoke('test:getAll', kbId) as Array<{
+          questions: string;
         }>;
-      };
 
-      // Extract all questions from all sections
-      const allQuestions: Question[] = [];
-      for (const module of parsed.modules) {
-        for (const chapter of module.chapters) {
-          for (const section of chapter.sections) {
-            if (section.questions) {
-              allQuestions.push(...section.questions);
-            }
+        // Extract questions from existing tests
+        for (const test of tests) {
+          try {
+            const testQuestions = JSON.parse(test.questions) as Question[];
+            allQuestions.push(...testQuestions);
+          } catch {
+            // Skip invalid questions
           }
         }
+      } catch {
+        // No tests found, continue to try parsing KB
+      }
+
+      // If no test questions, try to parse KB for embedded questions
+      if (allQuestions.length === 0) {
+        try {
+          const parsed = await window.electronAPI.invoke('kb:parse', kbId) as {
+            modules: Array<{
+              chapters: Array<{
+                sections: Array<{
+                  questions?: Question[];
+                  id: string;
+                  title: string;
+                  content?: { text?: string };
+                }>;
+              }>;
+            }>;
+          };
+
+          // Extract any embedded questions
+          for (const module of parsed.modules) {
+            for (const chapter of module.chapters) {
+              for (const section of chapter.sections) {
+                if (section.questions && section.questions.length > 0) {
+                  allQuestions.push(...section.questions);
+                }
+              }
+            }
+          }
+
+          // If still no questions, generate simple questions from content
+          if (allQuestions.length === 0) {
+            let sectionIndex = 0;
+            for (const module of parsed.modules) {
+              for (const chapter of module.chapters) {
+                for (const section of chapter.sections) {
+                  const content = section.content?.text || '';
+                  if (content.trim().length > 50) {
+                    // Create a simple comprehension question for sections with content
+                    allQuestions.push({
+                      id: `auto_${sectionIndex}`,
+                      type: 'short_answer',
+                      question: `Review the content from "${section.title}". What are the key points?`,
+                      correctAnswer: 'self-assessed',
+                      explanation: `This is a self-assessment question. Review your understanding of: ${section.title}`,
+                      difficulty: 'medium',
+                      tags: [section.title],
+                    });
+                    sectionIndex++;
+                  }
+                }
+              }
+            }
+          }
+        } catch (parseError) {
+          console.warn('KB parsing failed:', parseError);
+        }
+      }
+
+      if (allQuestions.length === 0) {
+        // Show a helpful message instead of throwing an error
+        showError('This knowledge base has no questions yet. Use the Editor to add content, or generate practice tests.', 'warning');
+        setSelectedKB(null);
+        setLoading(false);
+        return;
       }
 
       // Shuffle questions
@@ -98,9 +215,11 @@ function StudySession({ onExit }: StudySessionProps) {
       setScore(0);
       setAnsweredQuestions(0);
       setLoading(false);
+      showError(`Session started with ${shuffled.length} questions!`, 'info');
     } catch (error) {
       console.error('Failed to start session:', error);
-      alert(`Failed to start session: ${(error as Error).message}`);
+      showError(`Failed to start session: ${(error as Error).message}`);
+      setSelectedKB(null);
       setLoading(false);
     }
   };
@@ -126,9 +245,13 @@ function StudySession({ onExit }: StudySessionProps) {
 
   const nextQuestion = () => {
     if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1);
-      setSelectedAnswer(null);
-      setShowResult(false);
+      setIsTransitioning(true);
+      setTimeout(() => {
+        setCurrentQuestionIndex(currentQuestionIndex + 1);
+        setSelectedAnswer(null);
+        setShowResult(false);
+        setIsTransitioning(false);
+      }, 300);
     }
   };
 
@@ -140,6 +263,74 @@ function StudySession({ onExit }: StudySessionProps) {
     setShowResult(false);
     setScore(0);
     setAnsweredQuestions(0);
+  };
+
+  // Generate questions using AI for a specific KB
+  const generateQuestionsForKB = async (kbId: number, difficulty: 'easy' | 'medium' | 'hard' = 'medium') => {
+    try {
+      setIsGenerating(true);
+      setGenerationProgress('Analyzing knowledge base content...');
+      setError(null);
+
+      // Call AI to generate questions
+      setGenerationProgress('Generating questions with AI...');
+      const generatedQuestions = await window.electronAPI.invoke('test:generateQuestions', {
+        kbId,
+        questionsPerSection: 3,
+        difficulty,
+      }) as GeneratedQuestion[];
+
+      if (!generatedQuestions || generatedQuestions.length === 0) {
+        throw new Error('No questions were generated. Ensure the knowledge base has content and an AI provider is configured.');
+      }
+
+      setGenerationProgress('Saving practice test...');
+
+      // Save as a new practice test
+      await window.electronAPI.invoke('test:create', {
+        kbId,
+        title: `AI Generated Test - ${new Date().toLocaleDateString()}`,
+        type: 'ai_generated',
+        questions: generatedQuestions,
+      });
+
+      showError(`Successfully generated ${generatedQuestions.length} questions! Starting session...`, 'info');
+      setIsGenerating(false);
+      setGenerationProgress('');
+
+      // Start the study session with the new questions
+      await startSession(kbId);
+    } catch (error) {
+      console.error('Failed to generate questions:', error);
+      const errorMessage = (error as Error).message;
+      if (errorMessage.includes('AI Manager not configured')) {
+        showError('No AI provider configured. Go to Settings to add an API key.', 'error');
+      } else {
+        showError(`Failed to generate questions: ${errorMessage}`, 'error');
+      }
+      setIsGenerating(false);
+      setGenerationProgress('');
+    }
+  };
+
+  // Convert AI-generated options format to array for display
+  const getOptionsArray = (options: string[] | Record<string, string> | undefined): string[] => {
+    if (!options) return [];
+    if (Array.isArray(options)) return options;
+    // Convert Record<string, string> to array preserving order (A, B, C, D)
+    return ['A', 'B', 'C', 'D']
+      .filter(key => key in options)
+      .map(key => options[key]);
+  };
+
+  // Get the correct answer text for comparison
+  const getCorrectAnswerText = (question: Question): string => {
+    if (!question.options || !question.correctAnswer) return '';
+    if (Array.isArray(question.options)) {
+      return question.correctAnswer;
+    }
+    // For Record<string, string>, correctAnswer is the key (A, B, C, D)
+    return question.options[question.correctAnswer] || question.correctAnswer;
   };
 
   if (loading) {
@@ -157,6 +348,24 @@ function StudySession({ onExit }: StudySessionProps) {
   if (!selectedKB) {
     return (
       <div className="study-session">
+        {error && (
+          <div className={`error-toast ${error.type}`} role="alert">
+            <span>{error.message}</span>
+            <button onClick={() => setError(null)} aria-label="Dismiss">&times;</button>
+          </div>
+        )}
+
+        {isGenerating && (
+          <div className="generating-overlay">
+            <div className="generating-modal">
+              <div className="loading-spinner"></div>
+              <h3>Generating Questions with AI</h3>
+              <p>{generationProgress}</p>
+              <p className="generating-hint">This may take a minute...</p>
+            </div>
+          </div>
+        )}
+
         <div className="session-header">
           <h2>Select Knowledge Base</h2>
           <button className="secondary-button" onClick={onExit}>
@@ -165,30 +374,51 @@ function StudySession({ onExit }: StudySessionProps) {
         </div>
 
         {knowledgeBases.length === 0 ? (
-          <div className="empty-state">
+          <div className="empty-state fade-in">
             <p>No knowledge bases available.</p>
             <p>Import a knowledge base to start studying.</p>
           </div>
         ) : (
-          <div className="kb-selection-grid">
-            {knowledgeBases.map(kb => (
+          <div className="kb-selection-grid fade-in">
+            {knowledgeBases.map((kb, index) => (
               <div
                 key={kb.id}
                 className="kb-selection-card"
-                onClick={() => startSession(kb.id)}
+                style={{ animationDelay: `${index * 0.1}s` }}
+                role="article"
+                aria-label={`Knowledge base: ${kb.title}`}
               >
                 <h3>{kb.title}</h3>
                 {kb.metadata && (
                   <div className="kb-stats-small">
                     {kb.metadata.totalQuestions && (
-                      <span>{kb.metadata.totalQuestions} questions</span>
+                      <span>{kb.metadata.totalQuestions as number} questions</span>
                     )}
                     {kb.metadata.totalModules && (
-                      <span>{kb.metadata.totalModules} modules</span>
+                      <span>{kb.metadata.totalModules as number} modules</span>
                     )}
                   </div>
                 )}
-                <button className="primary-button-small">Start Studying</button>
+                <div className="kb-card-actions">
+                  <button
+                    className="primary-button-small"
+                    onClick={() => startSession(kb.id)}
+                    disabled={isGenerating}
+                  >
+                    Start Studying
+                  </button>
+                  <button
+                    className="secondary-button-small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      generateQuestionsForKB(kb.id);
+                    }}
+                    disabled={isGenerating}
+                    title="Generate new practice questions using AI"
+                  >
+                    Generate Questions
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -200,17 +430,43 @@ function StudySession({ onExit }: StudySessionProps) {
   // Session Complete view
   if (answeredQuestions === questions.length && questions.length > 0) {
     const percentage = Math.round((score / questions.length) * 100);
+    const sessionDuration = Math.round((Date.now() - sessionStartTime) / 1000 / 60); // minutes
+    const avgTimePerQuestion = Math.round((Date.now() - sessionStartTime) / 1000 / questions.length);
+
     return (
       <div className="study-session">
-        <div className="session-complete">
-          <h2>Session Complete</h2>
+        {error && (
+          <div className={`error-toast ${error.type}`} role="alert">
+            <span>{error.message}</span>
+            <button onClick={() => setError(null)} aria-label="Dismiss">&times;</button>
+          </div>
+        )}
+        <div className="session-complete fade-in">
+          <h2>Session Complete!</h2>
           <div className="score-display">
-            <div className="score-circle">
+            <div className={`score-circle ${percentage >= 70 ? 'pass' : 'fail'}`}>
               <span className="score-number">{percentage}%</span>
             </div>
             <p className="score-details">
               {score} out of {questions.length} correct
             </p>
+          </div>
+
+          <div className="session-stats">
+            <div className="stat-item">
+              <span className="stat-label">Time:</span>
+              <span className="stat-value">{sessionDuration} min</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Avg per Question:</span>
+              <span className="stat-value">{avgTimePerQuestion}s</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Performance:</span>
+              <span className="stat-value">
+                {percentage >= 90 ? 'Excellent!' : percentage >= 70 ? 'Good!' : 'Keep Practicing!'}
+              </span>
+            </div>
           </div>
 
           <div className="completion-actions">
@@ -245,17 +501,28 @@ function StudySession({ onExit }: StudySessionProps) {
 
   // Active Question view
   const currentQuestion = questions[currentQuestionIndex];
-  const isCorrect = showResult && selectedAnswer === currentQuestion.correctAnswer;
+  const currentOptions = getOptionsArray(currentQuestion.options);
+  const correctAnswerText = getCorrectAnswerText(currentQuestion);
+  const isCorrect = showResult && selectedAnswer === correctAnswerText;
   const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
 
   return (
     <div className="study-session">
+      {error && (
+        <div className={`error-toast ${error.type}`} role="alert">
+          <span>{error.message}</span>
+          <button onClick={() => setError(null)} aria-label="Dismiss">&times;</button>
+        </div>
+      )}
       <div className="session-header">
         <div className="progress-info">
           <span>Question {currentQuestionIndex + 1} of {questions.length}</span>
           <span className="score-info">Score: {score}/{answeredQuestions}</span>
+          <span className="score-percentage" aria-label="Current percentage">
+            {answeredQuestions > 0 ? Math.round((score / answeredQuestions) * 100) : 0}%
+          </span>
         </div>
-        <button className="secondary-button" onClick={restartSession}>
+        <button className="secondary-button" onClick={restartSession} aria-label="Exit session">
           Exit Session
         </button>
       </div>
@@ -264,7 +531,7 @@ function StudySession({ onExit }: StudySessionProps) {
         <div className="progress-fill" style={{ width: `${progress}%` }}></div>
       </div>
 
-      <div className="question-container">
+      <div className={`question-container ${isTransitioning ? 'fade-out' : 'fade-in'}`}>
         <div className="question-header">
           {currentQuestion.difficulty && (
             <span className={`difficulty-badge ${currentQuestion.difficulty}`}>
@@ -280,23 +547,27 @@ function StudySession({ onExit }: StudySessionProps) {
           )}
         </div>
 
-        <h3 className="question-text">{currentQuestion.question}</h3>
+        <h3 className="question-text" role="heading" aria-level={2}>{currentQuestion.question}</h3>
 
-        <div className="answer-options">
-          {currentQuestion.options?.map((option, index) => (
+        <div className="answer-options" role="radiogroup" aria-label="Answer options">
+          {currentOptions.map((option, index) => (
             <button
               key={index}
+              role="radio"
+              aria-checked={selectedAnswer === option}
+              aria-label={`Option ${index + 1}: ${option}`}
               className={`answer-option ${
                 selectedAnswer === option ? 'selected' : ''
               } ${
-                showResult && option === currentQuestion.correctAnswer ? 'correct' : ''
+                showResult && option === correctAnswerText ? 'correct' : ''
               } ${
-                showResult && selectedAnswer === option && option !== currentQuestion.correctAnswer ? 'incorrect' : ''
+                showResult && selectedAnswer === option && option !== correctAnswerText ? 'incorrect' : ''
               }`}
               onClick={() => handleAnswerSelect(option)}
               disabled={showResult}
             >
-              {option}
+              <span className="option-number">{index + 1}</span>
+              <span className="option-text">{option}</span>
             </button>
           ))}
         </div>

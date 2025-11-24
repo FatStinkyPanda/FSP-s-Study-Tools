@@ -2,6 +2,7 @@ import { DatabaseManager } from '../database/DatabaseManager';
 import { XMLParser, ParsedKnowledgeBase } from './XMLParser';
 import { ContentChunker } from './ContentChunker';
 import { KnowledgeBase } from '../../shared/types';
+import { ParserManager, ParsedDocument } from '../parser';
 
 export interface IndexedContent {
   chunkId: string;
@@ -18,10 +19,12 @@ export interface IndexedContent {
 export class KnowledgeBaseManager {
   private xmlParser: XMLParser;
   private chunker: ContentChunker;
+  private parserManager: ParserManager;
 
   constructor(private db: DatabaseManager) {
     this.xmlParser = new XMLParser();
     this.chunker = new ContentChunker();
+    this.parserManager = new ParserManager();
   }
 
   /**
@@ -69,6 +72,192 @@ export class KnowledgeBaseManager {
     } catch (error) {
       throw new Error(`Failed to import XML: ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * Import knowledge base from document file (PDF, DOCX, TXT)
+   */
+  async importFromDocument(filePath: string): Promise<number> {
+    try {
+      console.log(`Importing document: ${filePath}`);
+
+      // Check if file type is supported
+      if (!this.parserManager.isSupported(filePath)) {
+        throw new Error(
+          `Unsupported file type. Supported formats: ${this.parserManager
+            .getSupportedExtensions()
+            .join(', ')}`
+        );
+      }
+
+      // Parse document
+      console.log('Parsing document...');
+      const parsed = await this.parserManager.parseFile(filePath);
+
+      // Validate parsed document has content
+      if (!parsed || !parsed.text || parsed.text.trim().length === 0) {
+        throw new Error(
+          'Document appears to be empty or contains no extractable text. Please ensure the document contains readable content.'
+        );
+      }
+
+      console.log(`Extracted ${parsed.text.length} characters from document`);
+
+      // Log warnings if any
+      if (parsed.warnings && parsed.warnings.length > 0) {
+        console.warn('Document parsing warnings:', parsed.warnings);
+      }
+
+      // Convert to XML format
+      console.log('Converting to knowledge base format...');
+      const xmlContent = this.convertDocumentToXML(parsed);
+
+      // Validate XML was generated
+      if (!xmlContent || xmlContent.trim().length === 0) {
+        throw new Error('Failed to generate XML from document');
+      }
+
+      console.log(`Generated XML (${xmlContent.length} characters)`);
+
+      // Import as XML
+      console.log('Importing as XML...');
+      return await this.importFromXML(xmlContent, filePath);
+    } catch (error) {
+      throw new Error(`Failed to import document: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Convert parsed document to XML format
+   */
+  private convertDocumentToXML(doc: ParsedDocument): string {
+    try {
+      if (!doc || !doc.text) {
+        throw new Error('Invalid document: missing text content');
+      }
+
+      const uuid = this.generateUUID();
+      const title = doc.metadata.title || 'Imported Document';
+      const author = doc.metadata.author || 'Unknown';
+
+      // Split document into sections based on paragraphs
+      const paragraphs = doc.text
+        .split(/\n\n+/)
+        .map(p => p.trim())
+        .filter(p => p.length > 0);
+
+      // Ensure we have at least some content
+      if (paragraphs.length === 0) {
+        throw new Error('Document contains no readable paragraphs');
+      }
+
+    // Group paragraphs into sections (roughly 500 words each)
+    const sections: string[][] = [];
+    let currentSection: string[] = [];
+    let wordCount = 0;
+
+    for (const para of paragraphs) {
+      const paraWords = para.split(/\s+/).length;
+
+      if (wordCount + paraWords > 500 && currentSection.length > 0) {
+        sections.push(currentSection);
+        currentSection = [para];
+        wordCount = paraWords;
+      } else {
+        currentSection.push(para);
+        wordCount += paraWords;
+      }
+    }
+
+    if (currentSection.length > 0) {
+      sections.push(currentSection);
+    }
+
+    // Build XML
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+    xml += `<knowledge_base>\n`;
+    xml += `  <metadata>\n`;
+    xml += `    <uuid>${this.escapeXML(uuid)}</uuid>\n`;
+    xml += `    <title>${this.escapeXML(title)}</title>\n`;
+    xml += `    <version>1.0</version>\n`;
+    xml += `    <author>${this.escapeXML(author)}</author>\n`;
+    xml += `    <description>Imported from ${this.escapeXML(doc.filePath)}</description>\n`;
+    xml += `    <category>imported</category>\n`;
+    xml += `  </metadata>\n\n`;
+
+    xml += `  <modules>\n`;
+    xml += `    <module id="main">\n`;
+    xml += `      <title>${this.escapeXML(title)}</title>\n`;
+    xml += `      <description>Content from imported document</description>\n`;
+    xml += `      <chapters>\n`;
+    xml += `        <chapter id="content">\n`;
+    xml += `          <title>Document Content</title>\n`;
+    xml += `          <sections>\n`;
+
+    // Add sections
+    sections.forEach((sectionParas, idx) => {
+      const sectionId = `section-${idx + 1}`;
+      const sectionTitle = sectionParas[0].substring(0, 50) + (sectionParas[0].length > 50 ? '...' : '');
+
+      xml += `            <section id="${sectionId}">\n`;
+      xml += `              <title>${this.escapeXML(sectionTitle)}</title>\n`;
+      xml += `              <content>\n`;
+      xml += `                <text>\n`;
+      xml += this.escapeXML(sectionParas.join('\n\n'));
+      xml += `\n                </text>\n`;
+      xml += `              </content>\n`;
+      xml += `            </section>\n`;
+    });
+
+      xml += `          </sections>\n`;
+      xml += `        </chapter>\n`;
+      xml += `      </chapters>\n`;
+      xml += `    </module>\n`;
+      xml += `  </modules>\n`;
+      xml += `</knowledge_base>`;
+
+      return xml;
+    } catch (error) {
+      console.error('XML conversion error:', error);
+      throw new Error(`Failed to convert document to XML: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Generate a UUID v4
+   */
+  private generateUUID(): string {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+
+  /**
+   * Escape XML special characters
+   */
+  private escapeXML(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
+  /**
+   * Get supported document formats
+   */
+  getSupportedDocumentFormats(): string[] {
+    return this.parserManager.getSupportedExtensions();
+  }
+
+  /**
+   * Get file filters for document import dialog
+   */
+  getDocumentFileFilters(): Array<{ name: string; extensions: string[] }> {
+    return this.parserManager.getFileFilters();
   }
 
   /**
@@ -139,16 +328,25 @@ export class KnowledgeBaseManager {
 
     try {
       for (const chunk of chunks) {
+        // Build section ID that includes module and chapter for uniqueness
+        const fullSectionId = `${chunk.metadata.moduleId}/${chunk.metadata.chapterId}/${chunk.metadata.sectionId}`;
+
+        // Build keywords from metadata
+        const keywords = [
+          chunk.metadata.moduleId,
+          chunk.metadata.chapterId,
+          chunk.metadata.sectionId,
+          chunk.metadata.type,
+        ].join(' ');
+
         this.db.execute(
-          `INSERT INTO search_index (kb_id, module_id, chapter_id, section_id, content, content_type)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO content_fts (kb_id, section_id, content, keywords)
+           VALUES (?, ?, ?, ?)`,
           [
             chunk.metadata.kbId,
-            chunk.metadata.moduleId,
-            chunk.metadata.chapterId,
-            chunk.metadata.sectionId,
+            fullSectionId,
             chunk.content,
-            chunk.metadata.type,
+            keywords,
           ]
         );
       }
@@ -235,20 +433,37 @@ export class KnowledgeBaseManager {
     }>
   > {
     // Use FTS5 for full-text search
-    return this.db.query(
+    const results = this.db.query<{
+      section_id: string;
+      content: string;
+      keywords: string;
+      rank: number;
+    }>(
       `SELECT
-         module_id,
-         chapter_id,
          section_id,
-         highlight(search_index, 4, '<mark>', '</mark>') as content,
-         content_type,
-         bm25(search_index) as rank
-       FROM search_index
-       WHERE kb_id = ? AND search_index MATCH ?
+         highlight(content_fts, 2, '<mark>', '</mark>') as content,
+         keywords,
+         bm25(content_fts) as rank
+       FROM content_fts
+       WHERE kb_id = ? AND content_fts MATCH ?
        ORDER BY rank
        LIMIT ?`,
       [kbId, query, limit]
     );
+
+    // Parse section IDs (format: module/chapter/section)
+    return results.map((row) => {
+      const [moduleId, chapterId, sectionId] = row.section_id.split('/');
+      const keywordParts = row.keywords.split(' ');
+      return {
+        module_id: moduleId || '',
+        chapter_id: chapterId || '',
+        section_id: sectionId || '',
+        content: row.content,
+        content_type: keywordParts[keywordParts.length - 1] || 'text',
+        rank: row.rank,
+      };
+    });
   }
 
   /**
@@ -264,17 +479,17 @@ export class KnowledgeBaseManager {
     const stats = this.db.query<{
       total_sections: number;
       total_chunks: number;
-      content_type: string;
+      keywords: string;
       chunk_count: number;
     }>(
       `SELECT
          COUNT(DISTINCT section_id) as total_sections,
          COUNT(*) as total_chunks,
-         content_type,
+         keywords,
          COUNT(*) as chunk_count
-       FROM search_index
+       FROM content_fts
        WHERE kb_id = ?
-       GROUP BY content_type`,
+       GROUP BY keywords`,
       [kbId]
     );
 
@@ -282,7 +497,9 @@ export class KnowledgeBaseManager {
     let totalChunks = 0;
 
     for (const row of stats) {
-      contentTypes[row.content_type] = row.chunk_count;
+      const keywordParts = row.keywords.split(' ');
+      const contentType = keywordParts[keywordParts.length - 1] || 'text';
+      contentTypes[contentType] = row.chunk_count;
       totalChunks += row.chunk_count;
     }
 
@@ -302,8 +519,8 @@ export class KnowledgeBaseManager {
     this.db.beginTransaction();
 
     try {
-      // Delete search index entries
-      this.db.execute('DELETE FROM search_index WHERE kb_id = ?', [id]);
+      // Delete content search index entries
+      this.db.execute('DELETE FROM content_fts WHERE kb_id = ?', [id]);
 
       // Delete conversations
       this.db.execute('DELETE FROM conversations WHERE kb_id = ?', [id]);
@@ -359,7 +576,7 @@ export class KnowledgeBaseManager {
       );
 
       // Clear old index
-      this.db.execute('DELETE FROM search_index WHERE kb_id = ?', [id]);
+      this.db.execute('DELETE FROM content_fts WHERE kb_id = ?', [id]);
 
       // Re-index content
       await this.indexKnowledgeBase(id, parsed);

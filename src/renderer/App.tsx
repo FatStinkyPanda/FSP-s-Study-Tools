@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import StudySession from './StudySession';
+import KBEditor from './components/KBEditor';
+import Dashboard from './components/Dashboard';
 
 interface ElectronAPI {
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
@@ -29,11 +31,112 @@ interface AppSettings {
   theme?: 'dark' | 'light' | 'auto';
 }
 
+// KB Editor data types
+interface KBModule {
+  id: string;
+  title: string;
+  order: number;
+  chapters: KBChapter[];
+}
+
+interface KBChapter {
+  id: string;
+  title: string;
+  order: number;
+  sections: KBSection[];
+}
+
+interface KBSection {
+  id: string;
+  title: string;
+  order: number;
+  content: {
+    text: string;
+    files: { id: string; name: string; path: string; type: string }[];
+  };
+}
+
+interface KBData {
+  title: string;
+  metadata: {
+    version: string;
+    author: string;
+    description: string;
+  };
+  modules: KBModule[];
+}
+
+// Escape XML special characters
+function escapeXML(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+// Convert KBData to XML format matching the knowledge base schema
+function convertKBDataToXML(data: KBData): string {
+  const now = new Date().toISOString();
+
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<knowledge_base version="1.0">
+  <metadata>
+    <title>${escapeXML(data.title)}</title>
+    <created>${now}</created>
+    <modified>${now}</modified>
+    <author>${escapeXML(data.metadata.author || '')}</author>
+    <description>${escapeXML(data.metadata.description || '')}</description>
+    <version>${escapeXML(data.metadata.version || '1.0')}</version>
+  </metadata>
+  <structure>
+`;
+
+  // Add modules
+  for (const module of data.modules) {
+    xml += `    <module id="${escapeXML(module.id)}" title="${escapeXML(module.title)}">\n`;
+
+    // Add chapters
+    for (const chapter of module.chapters) {
+      xml += `      <chapter id="${escapeXML(chapter.id)}" title="${escapeXML(chapter.title)}">\n`;
+
+      // Add sections
+      for (const section of chapter.sections) {
+        xml += `        <section id="${escapeXML(section.id)}" title="${escapeXML(section.title)}">\n`;
+        xml += `          <content>\n`;
+        xml += `            <text>${escapeXML(section.content.text)}</text>\n`;
+
+        // Add file references
+        if (section.content.files.length > 0) {
+          xml += `            <files>\n`;
+          for (const file of section.content.files) {
+            xml += `              <file id="${escapeXML(file.id)}" name="${escapeXML(file.name)}" path="${escapeXML(file.path)}" type="${escapeXML(file.type)}" />\n`;
+          }
+          xml += `            </files>\n`;
+        }
+
+        xml += `          </content>\n`;
+        xml += `        </section>\n`;
+      }
+
+      xml += `      </chapter>\n`;
+    }
+
+    xml += `    </module>\n`;
+  }
+
+  xml += `  </structure>
+</knowledge_base>`;
+
+  return xml;
+}
+
 function App() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [loading, setLoading] = useState(true);
   const [appVersion, setAppVersion] = useState('');
-  const [currentView, setCurrentView] = useState<'home' | 'browse' | 'study' | 'settings'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'browse' | 'study' | 'editor' | 'settings' | 'dashboard'>('home');
   const [settings, setSettings] = useState<AppSettings>({});
   const [settingsSaved, setSettingsSaved] = useState(false);
 
@@ -138,6 +241,12 @@ function App() {
           [Home]
         </button>
         <button
+          className={currentView === 'dashboard' ? 'active' : ''}
+          onClick={() => setCurrentView('dashboard')}
+        >
+          [Dashboard]
+        </button>
+        <button
           className={currentView === 'browse' ? 'active' : ''}
           onClick={() => setCurrentView('browse')}
         >
@@ -148,6 +257,12 @@ function App() {
           onClick={() => setCurrentView('study')}
         >
           [Study]
+        </button>
+        <button
+          className={currentView === 'editor' ? 'active' : ''}
+          onClick={() => setCurrentView('editor')}
+        >
+          [Editor]
         </button>
         <button
           className={currentView === 'settings' ? 'active' : ''}
@@ -253,8 +368,47 @@ function App() {
           </div>
         )}
 
+        {currentView === 'dashboard' && (
+          <Dashboard onNavigateToStudy={() => setCurrentView('study')} />
+        )}
+
         {currentView === 'study' && (
           <StudySession onExit={() => setCurrentView('home')} />
+        )}
+
+        {currentView === 'editor' && (
+          <div className="view editor-view">
+            <KBEditor
+              onSave={async (data) => {
+                try {
+                  // Convert KBData to XML format
+                  const xmlContent = convertKBDataToXML(data);
+
+                  // Generate UUID for new KB
+                  const uuid = crypto.randomUUID();
+
+                  // Save to database
+                  await window.electronAPI.invoke('kb:create', {
+                    uuid,
+                    title: data.title,
+                    xml_content: xmlContent,
+                    metadata: data.metadata,
+                  });
+
+                  // Refresh the KB list
+                  const kbs = await window.electronAPI.invoke('kb:list') as KnowledgeBase[];
+                  setKnowledgeBases(kbs);
+
+                  // Return to home view
+                  setCurrentView('home');
+                } catch (error) {
+                  console.error('Failed to save KB:', error);
+                  alert(`Failed to save: ${(error as Error).message}`);
+                }
+              }}
+              onCancel={() => setCurrentView('home')}
+            />
+          </div>
         )}
 
         {currentView === 'settings' && (

@@ -3,6 +3,7 @@ import { OpenAIProvider } from './OpenAIProvider';
 import { AnthropicProvider } from './AnthropicProvider';
 import { GoogleAIProvider } from './GoogleAIProvider';
 import { OpenRouterProvider } from './OpenRouterProvider';
+import { LocalAIProvider } from './LocalAIProvider';
 import {
   AIProviderType,
   AICompletionRequest,
@@ -11,19 +12,32 @@ import {
   AIConfiguration,
   AIProviderConfig,
   AIProviderError,
+  LocalModelConfig,
 } from '../../shared/ai-types';
 
 export class AIManager {
   private providers: Map<AIProviderType, BaseAIProvider> = new Map();
+  private localProvider: LocalAIProvider | null = null;
   private defaultProvider: AIProviderType = 'openai';
   private defaultModel: string = 'gpt-4-turbo-preview';
   private defaultTemperature: number = 0.7;
   private defaultMaxTokens: number = 2048;
 
   constructor(configuration?: AIConfiguration) {
+    // Initialize local provider by default
+    this.initializeLocalProvider();
+
     if (configuration) {
       this.loadConfiguration(configuration);
     }
+  }
+
+  /**
+   * Initialize local AI provider
+   */
+  private initializeLocalProvider(modelsDirectory?: string): void {
+    this.localProvider = new LocalAIProvider(modelsDirectory);
+    this.providers.set('local', this.localProvider);
   }
 
   /**
@@ -87,6 +101,7 @@ export class AIManager {
    * Determine provider from model name
    */
   private determineProvider(model: string): AIProviderType {
+    if (model.startsWith('local:')) return 'local';
     if (model.startsWith('gpt-')) return 'openai';
     if (model.startsWith('claude-')) return 'anthropic';
     if (model.startsWith('gemini-')) return 'google';
@@ -296,8 +311,11 @@ export class AIManager {
     if (settings.openai_api_key && settings.openai_api_key.length > 0) {
       this.addProvider({
         type: 'openai',
+        name: 'OpenAI',
+        endpoint: 'https://api.openai.com/v1',
         apiKey: settings.openai_api_key,
         enabled: true,
+        models: [],
       });
     }
 
@@ -305,8 +323,11 @@ export class AIManager {
     if (settings.anthropic_api_key && settings.anthropic_api_key.length > 0) {
       this.addProvider({
         type: 'anthropic',
+        name: 'Anthropic',
+        endpoint: 'https://api.anthropic.com/v1',
         apiKey: settings.anthropic_api_key,
         enabled: true,
+        models: [],
       });
     }
 
@@ -314,8 +335,11 @@ export class AIManager {
     if (settings.google_api_key && settings.google_api_key.length > 0) {
       this.addProvider({
         type: 'google',
+        name: 'Google AI',
+        endpoint: 'https://generativelanguage.googleapis.com/v1',
         apiKey: settings.google_api_key,
         enabled: true,
+        models: [],
       });
     }
 
@@ -323,8 +347,11 @@ export class AIManager {
     if (settings.openrouter_api_key && settings.openrouter_api_key.length > 0) {
       this.addProvider({
         type: 'openrouter',
+        name: 'OpenRouter',
+        endpoint: 'https://openrouter.ai/api/v1',
         apiKey: settings.openrouter_api_key,
         enabled: true,
+        models: [],
       });
     }
 
@@ -355,9 +382,83 @@ export class AIManager {
   }
 
   /**
-   * Get list of configured providers
+   * Add a local model configuration
    */
-  getConfiguredProviders(): AIProviderType[] {
-    return Array.from(this.providers.keys());
+  addLocalModel(config: LocalModelConfig): void {
+    if (!this.localProvider) {
+      throw new Error('Local provider not initialized');
+    }
+    this.localProvider.addModelConfig(config);
+  }
+
+  /**
+   * Load a local model into memory
+   */
+  async loadLocalModel(modelId: string): Promise<void> {
+    if (!this.localProvider) {
+      throw new Error('Local provider not initialized');
+    }
+    await this.localProvider.loadModel(modelId);
+  }
+
+  /**
+   * Unload a local model from memory
+   */
+  async unloadLocalModel(modelId: string): Promise<void> {
+    if (!this.localProvider) {
+      throw new Error('Local provider not initialized');
+    }
+    await this.localProvider.unloadModel(modelId);
+  }
+
+  /**
+   * Get list of configured local models
+   */
+  listLocalModels(): string[] {
+    if (!this.localProvider) {
+      return [];
+    }
+    return this.localProvider.getLoadedModels();
+  }
+
+  /**
+   * Check if a local model is loaded
+   */
+  isLocalModelLoaded(modelId: string): boolean {
+    if (!this.localProvider) {
+      return false;
+    }
+    return this.localProvider.isModelLoaded(modelId);
+  }
+
+  /**
+   * Get local model configuration
+   */
+  getLocalModelConfig(modelId: string): LocalModelConfig | undefined {
+    if (!this.localProvider) {
+      return undefined;
+    }
+    return this.localProvider.getModelConfig(modelId);
+  }
+
+  /**
+   * Set local models directory
+   */
+  setLocalModelsDirectory(directory: string): void {
+    if (!this.localProvider) {
+      this.initializeLocalProvider(directory);
+    } else {
+      this.localProvider.setModelsDirectory(directory);
+    }
+  }
+
+  /**
+   * Get local models directory
+   */
+  getLocalModelsDirectory(): string | undefined {
+    if (!this.localProvider) {
+      return undefined;
+    }
+    return this.localProvider.getModelsDirectory();
   }
 }

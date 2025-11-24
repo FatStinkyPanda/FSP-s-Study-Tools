@@ -1,10 +1,15 @@
+const hooks = require('./forge.hooks');
+
 module.exports = {
   packagerConfig: {
-    asar: true,
+    asar: false,
     icon: './resources/icon',
     executableName: 'fsp-study-tools',
   },
   rebuildConfig: {},
+  hooks: {
+    postPackage: hooks.postPackage,
+  },
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
@@ -26,10 +31,6 @@ module.exports = {
     },
   ],
   plugins: [
-    {
-      name: '@electron-forge/plugin-auto-unpack-natives',
-      config: {},
-    },
     {
       name: '@electron-forge/plugin-webpack',
       config: {

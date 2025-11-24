@@ -4,6 +4,7 @@ export { OpenAIProvider } from './OpenAIProvider';
 export { AnthropicProvider } from './AnthropicProvider';
 export { GoogleAIProvider } from './GoogleAIProvider';
 export { OpenRouterProvider } from './OpenRouterProvider';
+export { LocalAIProvider } from './LocalAIProvider';
 export { AIManager } from './AIManager';
 export { ConversationManager, type Conversation } from './ConversationManager';
 

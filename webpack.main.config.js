@@ -1,5 +1,13 @@
+const path = require('path');
+
 module.exports = {
+  mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
+  target: 'electron-main',
   entry: './src/main/index.ts',
+  output: {
+    path: path.resolve(__dirname, '.webpack/main'),
+    filename: 'index.js',
+  },
   module: {
     rules: [
       {
@@ -12,9 +20,17 @@ module.exports = {
           },
         },
       },
+      {
+        test: /\.node$/,
+        loader: 'node-loader',
+      },
     ],
   },
   resolve: {
-    extensions: ['.ts', '.js'],
+    extensions: ['.ts', '.js', '.node'],
+  },
+  externals: {
+    'better-sqlite3': 'commonjs2 better-sqlite3',
+    'pdf2json': 'commonjs2 pdf2json',
   },
 };

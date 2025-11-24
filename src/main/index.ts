@@ -6,6 +6,9 @@ import { AIManager } from '../core/ai/AIManager';
 import { ConversationManager } from '../core/ai/ConversationManager';
 import { KnowledgeBaseManager } from '../core/knowledge/KnowledgeBaseManager';
 import { SettingsManager } from '../core/settings';
+import { ProgressManager } from '../core/progress';
+import { TestGenerator, TestQuestion } from '../core/tests';
+import { UpdateManager } from '../core/update';
 
 class Application {
   private mainWindow: BrowserWindow | null = null;
@@ -14,6 +17,9 @@ class Application {
   private conversationManager: ConversationManager | null = null;
   private knowledgeBaseManager: KnowledgeBaseManager | null = null;
   private settingsManager: SettingsManager | null = null;
+  private progressManager: ProgressManager | null = null;
+  private testGenerator: TestGenerator | null = null;
+  private updateManager: UpdateManager | null = null;
 
   constructor() {
     this.initializeApp();
@@ -69,13 +75,29 @@ class Application {
   }
 
   private async initializeDatabase(): Promise<void> {
-    const dataPath = app.getPath('userData');
-    const dbPath = path.join(dataPath, 'fsp-study-tools.db');
+    try {
+      const dataPath = app.getPath('userData');
 
-    this.databaseManager = new DatabaseManager(dbPath);
-    await this.databaseManager.initialize();
+      if (!dataPath) {
+        throw new Error('Unable to get userData path from Electron app');
+      }
 
-    console.log(`Database initialized at: ${dbPath}`);
+      const dbPath = path.join(dataPath, 'fsp-study-tools.db');
+
+      if (!dbPath || typeof dbPath !== 'string') {
+        throw new Error(`Invalid database path: ${dbPath}`);
+      }
+
+      console.log(`Initializing database at: ${dbPath}`);
+
+      this.databaseManager = new DatabaseManager(dbPath);
+      await this.databaseManager.initialize();
+
+      console.log(`Database initialized successfully at: ${dbPath}`);
+    } catch (error) {
+      console.error('Database initialization error:', error);
+      throw error;
+    }
   }
 
   private async initializeAI(): Promise<void> {
@@ -106,10 +128,23 @@ class Application {
     // Initialize Knowledge Base Manager
     this.knowledgeBaseManager = new KnowledgeBaseManager(this.databaseManager);
 
+    // Initialize Progress Manager
+    this.progressManager = new ProgressManager(this.databaseManager);
+
+    // Initialize Test Generator
+    this.testGenerator = new TestGenerator(this.databaseManager, this.aiManager);
+
+    // Initialize Update Manager
+    this.updateManager = new UpdateManager();
+
     console.log('AI system initialized');
   }
 
   private createMainWindow(): void {
+    // Get the base path - in development, __dirname is dist/main/main
+    // We need to go up to dist, then into renderer
+    const basePath = path.join(__dirname, '..', '..'); // Goes to dist/
+
     this.mainWindow = new BrowserWindow({
       width: 1200,
       height: 800,
@@ -118,23 +153,34 @@ class Application {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        preload: path.join(__dirname, 'preload.js'),
+        preload: path.join(__dirname, 'preload.js'), // preload.js is in same dir as index.js
       },
       title: "FSP's Study Tools",
       backgroundColor: '#ffffff',
     });
 
-    // Load the index.html
-    if (process.env.NODE_ENV === 'development') {
-      this.mainWindow.loadURL('http://localhost:8080');
+    // Load the index.html from dist/renderer/main_window/index.html
+    const htmlPath = path.join(basePath, 'renderer', 'main_window', 'index.html');
+    console.log('Loading HTML from:', htmlPath);
+    this.mainWindow.loadFile(htmlPath);
+
+    // Open DevTools in development
+    if (!app.isPackaged) {
       this.mainWindow.webContents.openDevTools();
-    } else {
-      this.mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
     }
 
     this.mainWindow.on('closed', () => {
       this.mainWindow = null;
     });
+
+    // Pass mainWindow to UpdateManager and start auto-check
+    if (this.updateManager) {
+      this.updateManager.setMainWindow(this.mainWindow);
+      // Start auto-check in production mode only
+      if (app.isPackaged) {
+        this.updateManager.startAutoCheck();
+      }
+    }
   }
 
   private setupIPCHandlers(): void {
@@ -248,7 +294,7 @@ class Application {
         // Extract assistant message from response
         const assistantMessage = {
           role: 'assistant' as const,
-          content: response.content,
+          content: response.choices[0].message.content,
         };
 
         // Add AI response to conversation
@@ -369,27 +415,53 @@ class Application {
         throw new Error('Knowledge Base Manager not initialized');
       }
 
+      if (!this.mainWindow) {
+        throw new Error('Main window not initialized');
+      }
+
       try {
-        // Open file dialog
-        const result = await dialog.showOpenDialog({
-          filters: [{ name: 'XML Files', extensions: ['xml'] }],
+        // Get all supported file filters
+        const xmlFilters = [{ name: 'XML Files', extensions: ['xml'] }];
+        const docFilters = this.knowledgeBaseManager.getDocumentFileFilters();
+        const allFilters = [...docFilters, ...xmlFilters];
+
+        // Open file dialog (attached to main window)
+        const result = await dialog.showOpenDialog(this.mainWindow, {
+          title: 'Import Knowledge Base',
+          filters: allFilters,
           properties: ['openFile']
         });
 
         if (result.canceled || result.filePaths.length === 0) {
+          console.log('File selection canceled');
           return { success: false };
         }
 
         const filePath = result.filePaths[0];
+        const fileExt = path.extname(filePath).toLowerCase();
+        console.log(`Importing knowledge base from: ${filePath} (${fileExt})`);
 
-        // Read file content
-        const xmlContent = fs.readFileSync(filePath, 'utf-8');
+        let kbId: number;
 
-        // Import KB
-        const kbId = await this.knowledgeBaseManager.importFromXML(xmlContent, filePath);
+        // Check if it's XML or a document
+        if (fileExt === '.xml') {
+          // Read XML file content
+          const xmlContent = fs.readFileSync(filePath, 'utf-8');
+          console.log(`XML file read successfully, size: ${xmlContent.length} bytes`);
 
+          // Import as XML
+          console.log('Starting XML import...');
+          kbId = await this.knowledgeBaseManager.importFromXML(xmlContent, filePath);
+        } else {
+          // Import as document (PDF, DOCX, TXT, etc.)
+          console.log('Starting document import...');
+          kbId = await this.knowledgeBaseManager.importFromDocument(filePath);
+        }
+
+        console.log(`Knowledge base imported successfully with ID: ${kbId}`);
         return { success: true, kbId };
       } catch (error) {
+        console.error('Import failed:', error);
         return { success: false, error: (error as Error).message };
       }
     });
@@ -476,6 +548,232 @@ class Application {
       }
       this.settingsManager.import(json);
       return true;
+    });
+
+    // Progress tracking handlers
+    ipcMain.handle('progress:record', async (_event, params: unknown) => {
+      if (!this.progressManager) {
+        throw new Error('Progress Manager not initialized');
+      }
+      this.progressManager.recordProgress(params as { kbId: number; sectionId: string; userScore?: number; aiScore?: number; timeSpent?: number; updateLastViewed?: boolean });
+      return true;
+    });
+
+    ipcMain.handle('progress:get', async (_event, kbId: number, sectionId: string) => {
+      if (!this.progressManager) {
+        throw new Error('Progress Manager not initialized');
+      }
+      return this.progressManager.getProgress(kbId, sectionId);
+    });
+
+    ipcMain.handle('progress:getAll', async (_event, kbId: number) => {
+      if (!this.progressManager) {
+        throw new Error('Progress Manager not initialized');
+      }
+      return this.progressManager.getAllProgress(kbId);
+    });
+
+    ipcMain.handle('progress:getStats', async (_event, kbId: number) => {
+      if (!this.progressManager) {
+        throw new Error('Progress Manager not initialized');
+      }
+      return this.progressManager.getProgressStats(kbId);
+    });
+
+    ipcMain.handle('progress:getRecent', async (_event, kbId: number, limit?: number) => {
+      if (!this.progressManager) {
+        throw new Error('Progress Manager not initialized');
+      }
+      return this.progressManager.getRecentActivity(kbId, limit);
+    });
+
+    ipcMain.handle('progress:getNeedingReview', async (_event, kbId: number, threshold?: number) => {
+      if (!this.progressManager) {
+        throw new Error('Progress Manager not initialized');
+      }
+      return this.progressManager.getSectionsNeedingReview(kbId, threshold);
+    });
+
+    ipcMain.handle('progress:recordSession', async (_event, params: unknown) => {
+      if (!this.progressManager) {
+        throw new Error('Progress Manager not initialized');
+      }
+      this.progressManager.recordStudySession(params as { kbId: number; sectionId: string; duration: number; userScore?: number; aiScore?: number });
+      return true;
+    });
+
+    ipcMain.handle('progress:updateUserScore', async (_event, kbId: number, sectionId: string, score: number) => {
+      if (!this.progressManager) {
+        throw new Error('Progress Manager not initialized');
+      }
+      this.progressManager.updateUserScore(kbId, sectionId, score);
+      return true;
+    });
+
+    ipcMain.handle('progress:updateAiScore', async (_event, kbId: number, sectionId: string, score: number) => {
+      if (!this.progressManager) {
+        throw new Error('Progress Manager not initialized');
+      }
+      this.progressManager.updateAiScore(kbId, sectionId, score);
+      return true;
+    });
+
+    ipcMain.handle('progress:getStreak', async (_event, kbId: number) => {
+      if (!this.progressManager) {
+        throw new Error('Progress Manager not initialized');
+      }
+      return this.progressManager.getStudyStreak(kbId);
+    });
+
+    ipcMain.handle('progress:getVelocity', async (_event, kbId: number, weeks?: number) => {
+      if (!this.progressManager) {
+        throw new Error('Progress Manager not initialized');
+      }
+      return this.progressManager.getLearningVelocity(kbId, weeks);
+    });
+
+    ipcMain.handle('progress:export', async (_event, kbId: number) => {
+      if (!this.progressManager) {
+        throw new Error('Progress Manager not initialized');
+      }
+      return this.progressManager.exportProgress(kbId);
+    });
+
+    ipcMain.handle('progress:reset', async (_event, kbId: number, sectionId?: string) => {
+      if (!this.progressManager) {
+        throw new Error('Progress Manager not initialized');
+      }
+      if (sectionId) {
+        this.progressManager.resetProgress(kbId, sectionId);
+      } else {
+        this.progressManager.resetAllProgress(kbId);
+      }
+      return true;
+    });
+
+    // Test generation handlers
+    ipcMain.handle('test:create', async (_event, params: unknown) => {
+      if (!this.testGenerator) {
+        throw new Error('Test Generator not initialized');
+      }
+      return this.testGenerator.createTest(params as {
+        kbId: number;
+        title: string;
+        type: 'manual' | 'ai_generated';
+        questions: TestQuestion[];
+      });
+    });
+
+    ipcMain.handle('test:get', async (_event, testId: number) => {
+      if (!this.testGenerator) {
+        throw new Error('Test Generator not initialized');
+      }
+      return this.testGenerator.getTest(testId);
+    });
+
+    ipcMain.handle('test:getAll', async (_event, kbId: number) => {
+      if (!this.testGenerator) {
+        throw new Error('Test Generator not initialized');
+      }
+      return this.testGenerator.getTestsForKB(kbId);
+    });
+
+    ipcMain.handle('test:update', async (_event, testId: number, updates: unknown) => {
+      if (!this.testGenerator) {
+        throw new Error('Test Generator not initialized');
+      }
+      this.testGenerator.updateTest(testId, updates as { title?: string; questions?: TestQuestion[] });
+      return true;
+    });
+
+    ipcMain.handle('test:delete', async (_event, testId: number) => {
+      if (!this.testGenerator) {
+        throw new Error('Test Generator not initialized');
+      }
+      this.testGenerator.deleteTest(testId);
+      return true;
+    });
+
+    ipcMain.handle('test:generateQuestions', async (_event, params: unknown) => {
+      if (!this.testGenerator) {
+        throw new Error('Test Generator not initialized');
+      }
+      return await this.testGenerator.generateQuestionsFromKB(params as {
+        kbId: number;
+        sectionIds?: string[];
+        questionsPerSection?: number;
+        difficulty?: 'easy' | 'medium' | 'hard';
+      });
+    });
+
+    ipcMain.handle('test:validateQuestion', async (_event, question: unknown) => {
+      if (!this.testGenerator) {
+        throw new Error('Test Generator not initialized');
+      }
+      return this.testGenerator.validateQuestion(question as {
+        id: string;
+        question: string;
+        type: 'multiple_choice' | 'true_false' | 'short_answer';
+        correctAnswer: string;
+        options?: Record<string, string>;
+        sectionId?: string;
+        explanation?: string;
+      });
+    });
+
+    ipcMain.handle('test:validateTest', async (_event, questions: unknown) => {
+      if (!this.testGenerator) {
+        throw new Error('Test Generator not initialized');
+      }
+      return this.testGenerator.validateTest(questions as TestQuestion[]);
+    });
+
+    ipcMain.handle('test:getStats', async (_event, testId: number) => {
+      if (!this.testGenerator) {
+        throw new Error('Test Generator not initialized');
+      }
+      return this.testGenerator.getTestStats(testId);
+    });
+
+    // Update operations
+    ipcMain.handle('update:check', async () => {
+      if (!this.updateManager) {
+        throw new Error('Update Manager not initialized');
+      }
+      return this.updateManager.checkForUpdates();
+    });
+
+    ipcMain.handle('update:download', async () => {
+      if (!this.updateManager) {
+        throw new Error('Update Manager not initialized');
+      }
+      return this.updateManager.downloadUpdate();
+    });
+
+    ipcMain.handle('update:install', async () => {
+      if (!this.updateManager) {
+        throw new Error('Update Manager not initialized');
+      }
+      this.updateManager.quitAndInstall();
+    });
+
+    ipcMain.handle('update:getConfig', async () => {
+      if (!this.updateManager) {
+        throw new Error('Update Manager not initialized');
+      }
+      return this.updateManager.getUpdateConfig();
+    });
+
+    ipcMain.handle('update:updateConfig', async (_event, config: unknown) => {
+      if (!this.updateManager) {
+        throw new Error('Update Manager not initialized');
+      }
+      this.updateManager.updateConfig(config as Partial<{
+        autoDownload: boolean;
+        autoInstallOnAppQuit: boolean;
+        currentVersion: string;
+        checkInterval: number;
+      }>);
     });
   }
 
