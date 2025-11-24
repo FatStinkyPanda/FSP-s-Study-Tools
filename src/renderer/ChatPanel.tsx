@@ -47,6 +47,30 @@ function ChatPanel({ isOpen, onToggle, currentQuestion, currentTopic, knowledgeB
     if (!knowledgeBaseId) return;
 
     try {
+      // Check if any AI providers are configured
+      const settings = await window.electronAPI.invoke('settings:getAll') as {
+        openai_api_key?: string;
+        anthropic_api_key?: string;
+        google_api_key?: string;
+        openrouter_api_key?: string;
+      };
+
+      const hasApiKey = !!(
+        settings.openai_api_key ||
+        settings.anthropic_api_key ||
+        settings.google_api_key ||
+        settings.openrouter_api_key
+      );
+
+      if (!hasApiKey) {
+        setMessages([{
+          role: 'assistant',
+          content: 'Welcome to the AI Tutor! To use this feature, you need to add an API key in Settings. Go to Settings and add an API key for OpenAI, Anthropic, Google AI, or OpenRouter.',
+          timestamp: new Date()
+        }]);
+        return;
+      }
+
       const systemMessage = `You are an AI tutor helping a student learn from their study materials.
 Be concise, clear, and encouraging. Focus on helping them understand concepts, not just giving answers.
 ${currentTopic ? `Current topic: ${currentTopic}` : ''}`;
@@ -67,6 +91,11 @@ ${currentTopic ? `Current topic: ${currentTopic}` : ''}`;
       }]);
     } catch (error) {
       console.error('Failed to initialize conversation:', error);
+      setMessages([{
+        role: 'assistant',
+        content: 'Failed to initialize AI tutor. Please check your API key in Settings.',
+        timestamp: new Date()
+      }]);
     }
   };
 
@@ -115,13 +144,27 @@ ${currentTopic ? `Current topic: ${currentTopic}` : ''}`;
     } catch (error) {
       console.error('Failed to send message:', error);
 
-      const errorMessage: Message = {
+      // Provide specific error messages based on error type
+      let errorContent = 'Sorry, I encountered an error. Please try again.';
+
+      const errorMessage = (error as Error).message;
+      if (errorMessage.includes('No AI providers configured')) {
+        errorContent = 'No AI provider is configured. Please add an API key in Settings to use the AI tutor.';
+      } else if (errorMessage.includes('API key')) {
+        errorContent = 'There is an issue with your API key. Please check your Settings and make sure you have entered a valid API key.';
+      } else if (errorMessage.includes('rate limit') || errorMessage.includes('quota')) {
+        errorContent = 'You have exceeded your API rate limit. Please try again later or check your API provider quota.';
+      } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+        errorContent = 'Network error: Unable to connect to the AI service. Please check your internet connection.';
+      }
+
+      const assistantErrorMessage: Message = {
         role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
+        content: errorContent,
         timestamp: new Date()
       };
 
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages(prev => [...prev, assistantErrorMessage]);
     } finally {
       setIsLoading(false);
     }
