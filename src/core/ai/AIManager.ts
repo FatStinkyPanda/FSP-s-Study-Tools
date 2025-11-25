@@ -194,7 +194,7 @@ export class AIManager {
     switch (providerType) {
       case 'openai': return 'gpt-4-turbo-preview';
       case 'anthropic': return 'claude-3-5-sonnet-20241022';
-      case 'google': return 'gemini-1.5-pro';
+      case 'google': return 'gemini-2.5-flash';
       case 'openrouter': return 'anthropic/claude-3.5-sonnet';
       default: return this.defaultModel;
     }
@@ -526,11 +526,12 @@ export class AIManager {
     }
 
     // Configure Google AI if API key present
+    // Note: v1beta is required for function calling support
     if (settings.google_api_key && settings.google_api_key.length > 0) {
       this.addProvider({
         type: 'google',
         name: 'Google AI',
-        endpoint: 'https://generativelanguage.googleapis.com/v1',
+        endpoint: 'https://generativelanguage.googleapis.com/v1beta',
         apiKey: settings.google_api_key,
         enabled: true,
         models: [],
