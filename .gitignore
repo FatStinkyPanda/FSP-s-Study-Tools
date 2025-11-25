@@ -190,3 +190,16 @@ Icon
 .openmemory-local/
 enforcement-status.json.bak
 *.d.ts
+
+# Sample files for testing (user-provided content)
+file_examples/
+
+# Temporary debug/test scripts
+check-db.js
+check-if-done-or-not.txt
+test-devtools.js
+test-study-session.js
+NUL
+
+# Claude Code artifacts
+.claude/

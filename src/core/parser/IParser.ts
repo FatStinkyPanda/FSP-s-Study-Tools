@@ -1,11 +1,34 @@
 /**
+ * Structured content element extracted from documents
+ */
+export interface ParsedContentElement {
+  type: 'paragraph' | 'heading' | 'image' | 'list' | 'code' | 'blockquote';
+  content?: string;
+  level?: number;          // For headings (1-6)
+  items?: string[];        // For lists
+  ordered?: boolean;       // For lists
+  src?: string;            // For images (base64 or path)
+  alt?: string;            // For images
+  position?: {             // Original position in document
+    page: number;
+    x: number;
+    y: number;
+  };
+}
+
+/**
  * Interface for document parsers
  */
 export interface ParsedDocument {
   /**
-   * Extracted text content from the document
+   * Extracted text content from the document (plain text fallback)
    */
   text: string;
+
+  /**
+   * Structured content elements (paragraphs, headings, images, etc.)
+   */
+  elements?: ParsedContentElement[];
 
   /**
    * Original file path

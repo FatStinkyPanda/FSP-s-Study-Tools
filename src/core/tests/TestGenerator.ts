@@ -2,6 +2,8 @@ import { DatabaseManager } from '../database/DatabaseManager';
 import { AIManager } from '../ai/AIManager';
 import { XMLParser } from '../knowledge/XMLParser';
 import { SectionContent } from '../../shared/types';
+import { SettingsManager } from '../settings/SettingsManager';
+import { ProgressManager, StudyProgress } from '../progress/ProgressManager';
 
 /**
  * Test Generator
@@ -13,10 +15,14 @@ export class TestGenerator {
   private db: DatabaseManager;
   private aiManager: AIManager | null;
   private xmlParser: XMLParser;
+  private settingsManager: SettingsManager | null;
+  private progressManager: ProgressManager | null;
 
-  constructor(db: DatabaseManager, aiManager?: AIManager) {
+  constructor(db: DatabaseManager, aiManager?: AIManager, settingsManager?: SettingsManager, progressManager?: ProgressManager) {
     this.db = db;
     this.aiManager = aiManager || null;
+    this.settingsManager = settingsManager || null;
+    this.progressManager = progressManager || null;
     this.xmlParser = new XMLParser();
   }
 
@@ -117,6 +123,8 @@ export class TestGenerator {
 
   /**
    * Generate questions from KB content using AI
+   * Supports selective generation by module, chapter, or section IDs
+   * Can limit total questions with totalQuestions param
    */
   async generateQuestionsFromKB(params: GenerateQuestionsParams): Promise<TestQuestion[]> {
     if (!this.aiManager) {
@@ -124,8 +132,8 @@ export class TestGenerator {
     }
 
     // Get KB content
-    const kbResults = this.db.query<{ xml_content: string }>(
-      `SELECT xml_content FROM knowledge_bases WHERE id = ?`,
+    const kbResults = this.db.query<{ xml_content: string; title: string }>(
+      `SELECT xml_content, title FROM knowledge_bases WHERE id = ?`,
       [params.kbId]
     );
 
@@ -135,23 +143,61 @@ export class TestGenerator {
 
     const xmlContent = kbResults[0].xml_content;
 
-    // Extract sections from XML
-    const sections = await this.extractSections(xmlContent, params.sectionIds);
+    if (!xmlContent || xmlContent.trim().length === 0) {
+      throw new Error('Knowledge base has no content. Please add content before generating questions.');
+    }
+
+    // Extract sections from XML with filters
+    const sections = await this.extractSections(xmlContent, {
+      moduleIds: params.moduleIds,
+      chapterIds: params.chapterIds,
+      sectionIds: params.sectionIds,
+    });
 
     if (sections.length === 0) {
-      throw new Error('No sections found in knowledge base');
+      throw new Error('No sections with sufficient content found. Please add more detailed content to your knowledge base sections (at least 50 characters per section).');
+    }
+
+    // Apply adaptive mode sorting if enabled
+    let sortedSections = sections;
+    if (params.adaptiveMode && params.adaptiveMode !== 'none' && this.progressManager) {
+      sortedSections = this.applySectionPrioritization(sections, params.kbId, params.adaptiveMode);
+    }
+
+    // Calculate questions per section based on total limit
+    let questionsPerSection = params.questionsPerSection || 5;
+    if (params.totalQuestions && sortedSections.length > 0) {
+      // Distribute questions evenly across sections, minimum 1 per section
+      questionsPerSection = Math.max(1, Math.ceil(params.totalQuestions / sortedSections.length));
     }
 
     // Generate questions using AI
     const questions: TestQuestion[] = [];
+    const difficulty = params.difficulty || 'medium';
 
-    for (const section of sections) {
+    for (const section of sortedSections) {
+      // Check if we've reached the total question limit
+      if (params.totalQuestions && questions.length >= params.totalQuestions) {
+        break;
+      }
+
+      // Calculate how many more questions we can generate
+      const remainingSlots = params.totalQuestions
+        ? Math.max(1, params.totalQuestions - questions.length)
+        : questionsPerSection;
+      const questionsToGenerate = Math.min(questionsPerSection, remainingSlots);
+
       const sectionQuestions = await this.generateQuestionsForSection(
         section,
-        params.questionsPerSection || 5,
-        params.difficulty || 'medium'
+        questionsToGenerate,
+        difficulty
       );
       questions.push(...sectionQuestions);
+    }
+
+    // Trim to exact total if specified
+    if (params.totalQuestions && questions.length > params.totalQuestions) {
+      return questions.slice(0, params.totalQuestions);
     }
 
     return questions;
@@ -159,35 +205,71 @@ export class TestGenerator {
 
   /**
    * Extract sections from XML content
+   * Only returns sections with substantial content (>50 chars)
+   * Supports filtering by moduleIds, chapterIds, or sectionIds
    */
-  private async extractSections(xmlContent: string, sectionIds?: string[]): Promise<KBSection[]> {
+  private async extractSections(
+    xmlContent: string,
+    params?: {
+      moduleIds?: string[];
+      chapterIds?: string[];
+      sectionIds?: string[];
+    }
+  ): Promise<KBSection[]> {
     try {
       const parsed = await this.xmlParser.parseKnowledgeBase(xmlContent);
       const sections: KBSection[] = [];
+      let totalSectionsChecked = 0;
+      let sectionsWithContent = 0;
+
+      const { moduleIds, chapterIds, sectionIds } = params || {};
 
       // Extract sections from parsed knowledge base
       for (const module of parsed.modules) {
         const moduleId = module.id;
         const moduleTitle = module.title;
 
+        // Skip this module if moduleIds filter is set and this module is not included
+        if (moduleIds && moduleIds.length > 0 && !moduleIds.includes(moduleId)) {
+          continue;
+        }
+
         for (const chapter of module.chapters) {
           const chapterId = chapter.id;
           const chapterTitle = chapter.title;
+          const fullChapterId = `${moduleId}.${chapterId}`;
+
+          // Skip this chapter if chapterIds filter is set and this chapter is not included
+          if (chapterIds && chapterIds.length > 0 && !chapterIds.includes(fullChapterId)) {
+            continue;
+          }
 
           for (const section of chapter.sections) {
-            const sectionId = section.id;
+            totalSectionsChecked++;
+            const sectionIdPart = section.id;
             const sectionTitle = section.title;
-            const fullId = `${moduleId}.${chapterId}.${sectionId}`;
+            const fullId = `${moduleId}.${chapterId}.${sectionIdPart}`;
 
-            // Filter by sectionIds if provided
-            if (!sectionIds || sectionIds.length === 0 || sectionIds.includes(fullId)) {
-              // Extract text content from section
-              const content = this.extractSectionContent(section.content);
+            // Filter by sectionIds if provided (most specific filter)
+            if (sectionIds && sectionIds.length > 0 && !sectionIds.includes(fullId)) {
+              continue;
+            }
 
+            // Extract text content from section
+            const content = this.extractSectionContent(section.content);
+            const trimmedContent = content.trim();
+
+            // Only include sections with substantial content (more than 50 chars)
+            // This prevents trying to generate questions from empty or stub sections
+            if (trimmedContent.length > 50) {
+              sectionsWithContent++;
               sections.push({
                 id: fullId,
+                moduleId: moduleId,
+                chapterId: chapterId,
+                sectionIdPart: sectionIdPart,
                 title: `${moduleTitle} > ${chapterTitle} > ${sectionTitle}`,
-                content: content.trim(),
+                content: trimmedContent,
               });
             }
           }
@@ -202,6 +284,7 @@ export class TestGenerator {
 
   /**
    * Extract text content from section content
+   * Handles multiple content formats: text, markdown, html, and structured elements
    */
   private extractSectionContent(content: SectionContent): string {
     const parts: string[] = [];
@@ -222,7 +305,101 @@ export class TestGenerator {
       parts.push(content.html.replace(/<[^>]*>/g, ''));
     }
 
+    // Extract text from structured elements (PDFs are often stored this way)
+    if (parts.length === 0 && content.elements && content.elements.length > 0) {
+      for (const element of content.elements) {
+        // Extract from headings, paragraphs, code blocks, blockquotes
+        if (element.content) {
+          parts.push(element.content);
+        }
+        // Extract from lists
+        if (element.items && element.items.length > 0) {
+          parts.push(element.items.join('\n'));
+        }
+        // Extract from images (alt text or OCR)
+        if (element.alt) {
+          parts.push(element.alt);
+        }
+        // Extract from tables
+        if (element.rows && element.rows.length > 0) {
+          // Add table headers
+          if (element.headers && element.headers.length > 0) {
+            parts.push(element.headers.join(' | '));
+          }
+          // Add table rows
+          for (const row of element.rows) {
+            parts.push(row.join(' | '));
+          }
+        }
+      }
+    }
+
+    // Extract text from images (OCR text)
+    if (parts.length === 0 && content.images && content.images.length > 0) {
+      for (const image of content.images) {
+        if (image.ocr_text) {
+          parts.push(image.ocr_text);
+        }
+      }
+    }
+
     return parts.join('\n\n').trim();
+  }
+
+  /**
+   * Apply section prioritization based on adaptive mode
+   * - low_scores: Prioritize sections with lowest user/AI scores (below 70%)
+   * - least_studied: Prioritize sections with least study time
+   */
+  private applySectionPrioritization(
+    sections: KBSection[],
+    kbId: number,
+    adaptiveMode: 'low_scores' | 'least_studied'
+  ): KBSection[] {
+    if (!this.progressManager) {
+      return sections;
+    }
+
+    // Get all progress data for this KB
+    const progressData = this.progressManager.getAllProgress(kbId);
+
+    // Create a map for quick lookup
+    const progressMap = new Map<string, StudyProgress>();
+    for (const progress of progressData) {
+      progressMap.set(progress.section_id, progress);
+    }
+
+    // Sort sections based on adaptive mode
+    const sortedSections = [...sections].sort((a, b) => {
+      const progressA = progressMap.get(a.id);
+      const progressB = progressMap.get(b.id);
+
+      if (adaptiveMode === 'low_scores') {
+        // Sections with no progress come first (never studied)
+        if (!progressA && !progressB) return 0;
+        if (!progressA) return -1; // No progress = highest priority
+        if (!progressB) return 1;
+
+        // Sort by average score (lower = higher priority)
+        const avgScoreA = (progressA.user_score + progressA.ai_score) / 2;
+        const avgScoreB = (progressB.user_score + progressB.ai_score) / 2;
+        return avgScoreA - avgScoreB; // Lower scores first
+      }
+
+      if (adaptiveMode === 'least_studied') {
+        // Sections with no progress come first (never studied)
+        if (!progressA && !progressB) return 0;
+        if (!progressA) return -1; // No progress = highest priority
+        if (!progressB) return 1;
+
+        // Sort by time spent (lower = higher priority)
+        return progressA.time_spent - progressB.time_spent; // Less time first
+      }
+
+      return 0;
+    });
+
+    return sortedSections;
   }
 
   /**
@@ -239,17 +416,27 @@ export class TestGenerator {
 
     const prompt = this.buildQuestionGenerationPrompt(section, count, difficulty);
 
+    // Get user-configured settings or use defaults
+    const temperature = this.settingsManager?.getNumber('temperature', 0.7) ?? 0.7;
+    const maxTokens = this.settingsManager?.getNumber('max_tokens', 64000) ?? 64000;
+
     try {
       const response = await this.aiManager.createCompletion({
         messages: [{ role: 'user', content: prompt }],
-        temperature: 0.7,
-        maxTokens: 2000,
+        temperature,
+        maxTokens,
       });
 
       const content = response.choices[0]?.message?.content || '';
+      const finishReason = response.choices[0]?.finishReason;
 
-      // Parse JSON response from AI
-      const questions = this.parseAIQuestionResponse(content, section.id);
+      // Check if response was truncated
+      if (finishReason === 'length') {
+        console.warn('AI response was truncated due to max_tokens limit');
+      }
+
+      // Parse JSON response from AI, including full hierarchy IDs
+      const questions = this.parseAIQuestionResponse(content, section, difficulty);
 
       return questions;
     } catch (error) {
@@ -300,34 +487,160 @@ IMPORTANT: Return ONLY valid JSON, no additional text or formatting.`;
 
   /**
    * Parse AI response to extract questions
+   * Includes full hierarchy IDs (moduleId, chapterId, sectionId) in questions
    */
-  private parseAIQuestionResponse(content: string, sectionId: string): TestQuestion[] {
+  private parseAIQuestionResponse(
+    content: string,
+    section: KBSection,
+    difficulty: 'easy' | 'medium' | 'hard'
+  ): TestQuestion[] {
     try {
+      // Clean up the response - remove markdown code blocks if present
+      let cleanedContent = content.trim();
+
+      // Remove markdown code block markers (```json ... ``` or ``` ... ```)
+      cleanedContent = cleanedContent.replace(/^```(?:json)?\s*\n?/i, '');
+      cleanedContent = cleanedContent.replace(/\n?```\s*$/i, '');
+      cleanedContent = cleanedContent.trim();
+
       // Extract JSON from response (AI might add text before/after)
-      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      let jsonMatch = cleanedContent.match(/\[[\s\S]*\]/);
+
+      // If no complete array found, try to find partial array starting with [
       if (!jsonMatch) {
-        throw new Error('No JSON array found in AI response');
+        const arrayStart = cleanedContent.indexOf('[');
+        if (arrayStart !== -1) {
+          // Try to repair truncated JSON by finding complete objects
+          const partialJson = cleanedContent.substring(arrayStart);
+
+          // Try to find and extract complete question objects
+          const completeObjects = this.extractCompleteJsonObjects(partialJson);
+          if (completeObjects.length > 0) {
+            return completeObjects.map((q, index) => ({
+              id: this.generateQuestionId(section.id, index),
+              question: q.question,
+              type: 'multiple_choice' as const,
+              correctAnswer: q.correctAnswer,
+              options: q.options,
+              moduleId: section.moduleId,
+              chapterId: section.chapterId,
+              sectionId: section.id,
+              explanation: q.explanation,
+              difficulty,
+              tags: [section.title],
+            }));
+          }
+        }
+        throw new Error('No JSON array found in AI response. The AI may have returned an unexpected format.');
       }
 
-      const rawQuestions = JSON.parse(jsonMatch[0]);
+      let rawQuestions;
+      try {
+        rawQuestions = JSON.parse(jsonMatch[0]);
+      } catch {
+        // Try to recover partial data from malformed JSON
+        const completeObjects = this.extractCompleteJsonObjects(jsonMatch[0]);
+        if (completeObjects.length > 0) {
+          rawQuestions = completeObjects;
+        } else {
+          throw new Error('Invalid JSON in AI response. Please try again.');
+        }
+      }
 
       if (!Array.isArray(rawQuestions)) {
         throw new Error('AI response is not an array');
       }
 
-      // Convert to TestQuestion format with UUIDs
+      if (rawQuestions.length === 0) {
+        throw new Error('AI returned empty question array');
+      }
+
+      // Convert to TestQuestion format with UUIDs and full hierarchy IDs
       return rawQuestions.map((q, index) => ({
-        id: this.generateQuestionId(sectionId, index),
+        id: this.generateQuestionId(section.id, index),
         question: q.question,
         type: 'multiple_choice' as const,
         correctAnswer: q.correctAnswer,
         options: q.options,
-        sectionId,
+        moduleId: section.moduleId,
+        chapterId: section.chapterId,
+        sectionId: section.id,
         explanation: q.explanation,
+        difficulty,
+        tags: [section.title],
       }));
     } catch (error) {
       throw new Error(`Failed to parse AI response: ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * Extract complete JSON objects from a potentially truncated array string
+   */
+  private extractCompleteJsonObjects(jsonString: string): Array<{
+    question: string;
+    correctAnswer: string;
+    options: Record<string, string>;
+    explanation?: string;
+  }> {
+    const objects: Array<{
+      question: string;
+      correctAnswer: string;
+      options: Record<string, string>;
+      explanation?: string;
+    }> = [];
+
+    // Find all complete JSON objects in the string
+    let braceCount = 0;
+    let objectStart = -1;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = 0; i < jsonString.length; i++) {
+      const char = jsonString[i];
+
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escapeNext = true;
+        continue;
+      }
+
+      if (char === '"' && !escapeNext) {
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) continue;
+
+      if (char === '{') {
+        if (braceCount === 0) {
+          objectStart = i;
+        }
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0 && objectStart !== -1) {
+          // Found a complete object
+          const objectStr = jsonString.substring(objectStart, i + 1);
+          try {
+            const obj = JSON.parse(objectStr);
+            // Validate it has required fields
+            if (obj.question && obj.correctAnswer && obj.options) {
+              objects.push(obj);
+            }
+          } catch {
+            // Skip invalid objects
+          }
+          objectStart = -1;
+        }
+      }
+    }
+
+    return objects;
   }
 
   /**
@@ -438,9 +751,14 @@ export interface UpdateTestParams {
 
 export interface GenerateQuestionsParams {
   kbId: number;
-  sectionIds?: string[]; // Optional: specific sections to generate from
+  moduleIds?: string[];  // Optional: specific modules to generate from
+  chapterIds?: string[]; // Optional: specific chapters to generate from (format: moduleId.chapterId)
+  sectionIds?: string[]; // Optional: specific sections to generate from (format: moduleId.chapterId.sectionId)
   questionsPerSection?: number; // Default: 5
+  totalQuestions?: number; // Optional: limit total questions across all content
   difficulty?: 'easy' | 'medium' | 'hard'; // Default: medium
+  includeExisting?: boolean; // If true, generate more even if questions exist
+  adaptiveMode?: 'none' | 'low_scores' | 'least_studied'; // Adaptive testing mode
 }
 
 export interface TestQuestion {
@@ -449,8 +767,12 @@ export interface TestQuestion {
   type: 'multiple_choice' | 'true_false' | 'short_answer';
   correctAnswer: string;
   options?: Record<string, string>; // For multiple choice: { A: "...", B: "...", ... }
-  sectionId?: string; // Which KB section this question is from
+  moduleId?: string;   // Which KB module this question is from
+  chapterId?: string;  // Which KB chapter this question is from
+  sectionId?: string;  // Which KB section this question is from (full path: moduleId.chapterId.sectionId)
   explanation?: string; // Explanation of the correct answer
+  difficulty?: 'easy' | 'medium' | 'hard';
+  tags?: string[];     // Optional tags for categorization
 }
 
 export interface PracticeTest {
@@ -472,7 +794,10 @@ interface PracticeTestRow {
 }
 
 interface KBSection {
-  id: string;
+  id: string;           // Full section ID: moduleId.chapterId.sectionId
+  moduleId: string;     // Module ID
+  chapterId: string;    // Chapter ID (just the chapter part)
+  sectionIdPart: string; // Section ID (just the section part)
   title: string;
   content: string;
 }

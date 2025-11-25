@@ -129,6 +129,23 @@ BEGIN
     UPDATE settings SET updated_at = CURRENT_TIMESTAMP WHERE key = NEW.key;
 END;
 
+-- Highlights Table (for user text highlights in KB content)
+CREATE TABLE IF NOT EXISTS highlights (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kb_id INTEGER NOT NULL,
+    section_id TEXT NOT NULL,
+    start_offset INTEGER NOT NULL,
+    end_offset INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    color TEXT DEFAULT 'yellow',
+    note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_highlights_kb ON highlights(kb_id);
+CREATE INDEX IF NOT EXISTS idx_highlights_section ON highlights(kb_id, section_id);
+
 -- Views for common queries
 CREATE VIEW IF NOT EXISTS knowledge_base_stats AS
 SELECT

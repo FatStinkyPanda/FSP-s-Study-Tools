@@ -12,8 +12,18 @@ export interface AppSettings {
 
   // AI Model Settings
   default_model?: string;
+  openai_model?: string;
+  anthropic_model?: string;
+  google_model?: string;
+  openrouter_model?: string;
   temperature?: number;
   max_tokens?: number;
+
+  // Available models (cached from API)
+  openai_models?: string[];
+  anthropic_models?: string[];
+  google_models?: string[];
+  openrouter_models?: string[];
 
   // UI Settings
   theme?: 'dark' | 'light' | 'auto';
@@ -28,7 +38,6 @@ export interface AppSettings {
 export interface SettingRow {
   key: string;
   value: string;
-  category: string;
   updated_at: string;
 }
 
@@ -36,57 +45,59 @@ export interface SettingRow {
  * SettingsManager
  *
  * Manages application settings with persistent storage in SQLite.
- * Settings are stored as key-value pairs with categories for organization.
+ * Settings are stored as key-value pairs in JSON format.
  */
 export class SettingsManager {
   private db: DatabaseManager;
-  private cache: Map<string, string>;
+  private cache: Map<string, unknown>;
 
   constructor(databaseManager: DatabaseManager) {
     this.db = databaseManager;
     this.cache = new Map();
-    this.initializeSettingsTable();
     this.loadCache();
-  }
-
-  /**
-   * Initialize settings table if it doesn't exist
-   */
-  private initializeSettingsTable(): void {
-    const createTableSQL = `
-      CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL,
-        category TEXT NOT NULL,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `;
-
-    this.db.getDatabase().exec(createTableSQL);
   }
 
   /**
    * Load all settings into memory cache
    */
   private loadCache(): void {
-    const stmt = this.db.getDatabase().prepare('SELECT key, value FROM settings');
-    const rows = stmt.all() as Array<{ key: string; value: string }>;
+    try {
+      const stmt = this.db.getDatabase().prepare('SELECT key, value FROM settings');
+      const rows = stmt.all() as Array<{ key: string; value: string }>;
 
-    this.cache.clear();
-    for (const row of rows) {
-      this.cache.set(row.key, row.value);
+      this.cache.clear();
+      for (const row of rows) {
+        try {
+          // Parse JSON value
+          this.cache.set(row.key, JSON.parse(row.value));
+        } catch {
+          // If not valid JSON, store as string
+          this.cache.set(row.key, row.value);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load settings cache:', error);
     }
   }
 
   /**
    * Get a setting value by key
    */
-  get(key: string, defaultValue?: string): string | undefined {
+  get<T = unknown>(key: string, defaultValue?: T): T | undefined {
     const cached = this.cache.get(key);
     if (cached !== undefined) {
-      return cached;
+      return cached as T;
     }
     return defaultValue;
+  }
+
+  /**
+   * Get a setting as a string
+   */
+  getString(key: string, defaultValue?: string): string | undefined {
+    const value = this.get(key);
+    if (value === undefined) return defaultValue;
+    return String(value);
   }
 
   /**
@@ -95,7 +106,8 @@ export class SettingsManager {
   getBoolean(key: string, defaultValue = false): boolean {
     const value = this.get(key);
     if (value === undefined) return defaultValue;
-    return value === 'true' || value === '1';
+    if (typeof value === 'boolean') return value;
+    return value === 'true' || value === '1' || value === true;
   }
 
   /**
@@ -104,26 +116,37 @@ export class SettingsManager {
   getNumber(key: string, defaultValue = 0): number {
     const value = this.get(key);
     if (value === undefined) return defaultValue;
-    const parsed = parseFloat(value);
+    if (typeof value === 'number') return value;
+    const parsed = parseFloat(String(value));
     return isNaN(parsed) ? defaultValue : parsed;
   }
 
   /**
-   * Set a setting value
+   * Get a setting as an array
    */
-  set(key: string, value: string | number | boolean, category = 'general'): void {
-    const stringValue = String(value);
+  getArray<T = string>(key: string, defaultValue: T[] = []): T[] {
+    const value = this.get(key);
+    if (value === undefined) return defaultValue;
+    if (Array.isArray(value)) return value as T[];
+    return defaultValue;
+  }
+
+  /**
+   * Set a setting value (stores as JSON)
+   */
+  set(key: string, value: unknown): void {
+    const jsonValue = JSON.stringify(value);
 
     const stmt = this.db.getDatabase().prepare(`
-      INSERT INTO settings (key, value, category, updated_at)
-      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO settings (key, value, updated_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(key) DO UPDATE SET
         value = excluded.value,
         updated_at = CURRENT_TIMESTAMP
     `);
 
-    stmt.run(key, stringValue, category);
-    this.cache.set(key, stringValue);
+    stmt.run(key, jsonValue);
+    this.cache.set(key, value);
   }
 
   /**
@@ -142,28 +165,38 @@ export class SettingsManager {
     const settings: AppSettings = {};
 
     // AI Provider API Keys
-    settings.openai_api_key = this.get('openai_api_key');
-    settings.anthropic_api_key = this.get('anthropic_api_key');
-    settings.google_api_key = this.get('google_api_key');
-    settings.openrouter_api_key = this.get('openrouter_api_key');
+    settings.openai_api_key = this.getString('openai_api_key');
+    settings.anthropic_api_key = this.getString('anthropic_api_key');
+    settings.google_api_key = this.getString('google_api_key');
+    settings.openrouter_api_key = this.getString('openrouter_api_key');
 
     // Default AI Provider
-    const provider = this.get('default_ai_provider');
+    const provider = this.getString('default_ai_provider');
     if (provider === 'openai' || provider === 'anthropic' || provider === 'google' || provider === 'openrouter') {
       settings.default_ai_provider = provider;
     }
 
     // AI Model Settings
-    settings.default_model = this.get('default_model');
+    settings.default_model = this.getString('default_model');
+    settings.openai_model = this.getString('openai_model');
+    settings.anthropic_model = this.getString('anthropic_model');
+    settings.google_model = this.getString('google_model');
+    settings.openrouter_model = this.getString('openrouter_model');
     settings.temperature = this.getNumber('temperature');
     settings.max_tokens = this.getNumber('max_tokens');
 
+    // Available models (cached)
+    settings.openai_models = this.getArray<string>('openai_models');
+    settings.anthropic_models = this.getArray<string>('anthropic_models');
+    settings.google_models = this.getArray<string>('google_models');
+    settings.openrouter_models = this.getArray<string>('openrouter_models');
+
     // UI Settings
-    const theme = this.get('theme');
+    const theme = this.getString('theme');
     if (theme === 'dark' || theme === 'light' || theme === 'auto') {
       settings.theme = theme;
     }
-    const fontSize = this.get('font_size');
+    const fontSize = this.getString('font_size');
     if (fontSize === 'small' || fontSize === 'medium' || fontSize === 'large') {
       settings.font_size = fontSize;
     }
@@ -182,66 +215,78 @@ export class SettingsManager {
   updateAll(settings: Partial<AppSettings>): void {
     // AI Provider API Keys
     if (settings.openai_api_key !== undefined) {
-      this.set('openai_api_key', settings.openai_api_key, 'ai_provider');
+      this.set('openai_api_key', settings.openai_api_key);
     }
     if (settings.anthropic_api_key !== undefined) {
-      this.set('anthropic_api_key', settings.anthropic_api_key, 'ai_provider');
+      this.set('anthropic_api_key', settings.anthropic_api_key);
     }
     if (settings.google_api_key !== undefined) {
-      this.set('google_api_key', settings.google_api_key, 'ai_provider');
+      this.set('google_api_key', settings.google_api_key);
     }
     if (settings.openrouter_api_key !== undefined) {
-      this.set('openrouter_api_key', settings.openrouter_api_key, 'ai_provider');
+      this.set('openrouter_api_key', settings.openrouter_api_key);
     }
 
     // Default AI Provider
     if (settings.default_ai_provider !== undefined) {
-      this.set('default_ai_provider', settings.default_ai_provider, 'ai_provider');
+      this.set('default_ai_provider', settings.default_ai_provider);
     }
 
     // AI Model Settings
     if (settings.default_model !== undefined) {
-      this.set('default_model', settings.default_model, 'ai_model');
+      this.set('default_model', settings.default_model);
+    }
+    if (settings.openai_model !== undefined) {
+      this.set('openai_model', settings.openai_model);
+    }
+    if (settings.anthropic_model !== undefined) {
+      this.set('anthropic_model', settings.anthropic_model);
+    }
+    if (settings.google_model !== undefined) {
+      this.set('google_model', settings.google_model);
+    }
+    if (settings.openrouter_model !== undefined) {
+      this.set('openrouter_model', settings.openrouter_model);
     }
     if (settings.temperature !== undefined) {
-      this.set('temperature', settings.temperature, 'ai_model');
+      this.set('temperature', settings.temperature);
     }
     if (settings.max_tokens !== undefined) {
-      this.set('max_tokens', settings.max_tokens, 'ai_model');
+      this.set('max_tokens', settings.max_tokens);
+    }
+
+    // Available models (cached)
+    if (settings.openai_models !== undefined) {
+      this.set('openai_models', settings.openai_models);
+    }
+    if (settings.anthropic_models !== undefined) {
+      this.set('anthropic_models', settings.anthropic_models);
+    }
+    if (settings.google_models !== undefined) {
+      this.set('google_models', settings.google_models);
+    }
+    if (settings.openrouter_models !== undefined) {
+      this.set('openrouter_models', settings.openrouter_models);
     }
 
     // UI Settings
     if (settings.theme !== undefined) {
-      this.set('theme', settings.theme, 'ui');
+      this.set('theme', settings.theme);
     }
     if (settings.font_size !== undefined) {
-      this.set('font_size', settings.font_size, 'ui');
+      this.set('font_size', settings.font_size);
     }
 
     // Study Settings
     if (settings.questions_per_session !== undefined) {
-      this.set('questions_per_session', settings.questions_per_session, 'study');
+      this.set('questions_per_session', settings.questions_per_session);
     }
     if (settings.show_explanations !== undefined) {
-      this.set('show_explanations', settings.show_explanations, 'study');
+      this.set('show_explanations', settings.show_explanations);
     }
     if (settings.shuffle_questions !== undefined) {
-      this.set('shuffle_questions', settings.shuffle_questions, 'study');
+      this.set('shuffle_questions', settings.shuffle_questions);
     }
-  }
-
-  /**
-   * Get settings by category
-   */
-  getByCategory(category: string): SettingRow[] {
-    const stmt = this.db.getDatabase().prepare(`
-      SELECT key, value, category, updated_at
-      FROM settings
-      WHERE category = ?
-      ORDER BY key
-    `);
-
-    return stmt.all(category) as SettingRow[];
   }
 
   /**
@@ -253,20 +298,20 @@ export class SettingsManager {
     this.cache.clear();
 
     // Set default values
-    this.set('theme', 'dark', 'ui');
-    this.set('font_size', 'medium', 'ui');
-    this.set('questions_per_session', 20, 'study');
-    this.set('show_explanations', true, 'study');
-    this.set('shuffle_questions', true, 'study');
-    this.set('temperature', 0.7, 'ai_model');
-    this.set('max_tokens', 2000, 'ai_model');
+    this.set('theme', 'dark');
+    this.set('font_size', 'medium');
+    this.set('questions_per_session', 20);
+    this.set('show_explanations', true);
+    this.set('shuffle_questions', true);
+    this.set('temperature', 0.7);
+    this.set('max_tokens', 64000);
   }
 
   /**
    * Check if an API key is configured for a provider
    */
   hasApiKey(provider: 'openai' | 'anthropic' | 'google' | 'openrouter'): boolean {
-    const key = this.get(`${provider}_api_key`);
+    const key = this.getString(`${provider}_api_key`);
     return !!key && key.length > 0;
   }
 
@@ -274,8 +319,8 @@ export class SettingsManager {
    * Get the default AI provider or the first one with an API key
    */
   getDefaultProvider(): string | undefined {
-    const defaultProvider = this.get('default_ai_provider');
-    if (defaultProvider && this.hasApiKey(defaultProvider as any)) {
+    const defaultProvider = this.getString('default_ai_provider');
+    if (defaultProvider && this.hasApiKey(defaultProvider as 'openai' | 'anthropic' | 'google' | 'openrouter')) {
       return defaultProvider;
     }
 

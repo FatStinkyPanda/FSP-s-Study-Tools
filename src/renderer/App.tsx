@@ -5,6 +5,7 @@ import KBEditor from './components/KBEditor';
 import Dashboard from './components/Dashboard';
 import SearchResults from './components/SearchResults';
 import UpdateNotification from './components/UpdateNotification';
+import KBViewer from './components/KBViewer';
 
 interface ElectronAPI {
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
@@ -30,14 +31,43 @@ interface AppSettings {
   anthropic_api_key?: string;
   google_api_key?: string;
   openrouter_api_key?: string;
+  default_ai_provider?: 'openai' | 'anthropic' | 'google' | 'openrouter';
+  default_model?: string;
+  openai_model?: string;
+  anthropic_model?: string;
+  google_model?: string;
+  openrouter_model?: string;
+  openai_models?: string[];
+  anthropic_models?: string[];
+  google_models?: string[];
+  openrouter_models?: string[];
+  temperature?: number;
+  max_tokens?: number;
   theme?: 'dark' | 'light' | 'auto';
 }
 
+interface FetchModelsResult {
+  success: boolean;
+  models: string[];
+  error?: string;
+}
+
 // KB Editor data types
+interface KBFileReference {
+  id: string;
+  name: string;
+  path: string;
+  type: string;
+  parsed?: boolean;
+  parsedContent?: string;
+  parseError?: string;
+}
+
 interface KBModule {
   id: string;
   title: string;
   order: number;
+  files: KBFileReference[];
   chapters: KBChapter[];
 }
 
@@ -45,6 +75,7 @@ interface KBChapter {
   id: string;
   title: string;
   order: number;
+  files: KBFileReference[];
   sections: KBSection[];
 }
 
@@ -54,7 +85,7 @@ interface KBSection {
   order: number;
   content: {
     text: string;
-    files: { id: string; name: string; path: string; type: string }[];
+    files: KBFileReference[];
   };
 }
 
@@ -78,57 +109,135 @@ function escapeXML(str: string): string {
     .replace(/'/g, '&apos;');
 }
 
-// Convert KBData to XML format matching the knowledge base schema
-function convertKBDataToXML(data: KBData): string {
+// Helper function to render files in XML format
+function renderFilesXML(files: KBFileReference[], indent: string): string {
+  if (!files || files.length === 0) return '';
+
+  let xml = `${indent}<files>\n`;
+  for (const file of files) {
+    xml += `${indent}  <file id="${escapeXML(file.id)}" name="${escapeXML(file.name)}" path="${escapeXML(file.path)}" type="${escapeXML(file.type)}" parsed="${file.parsed ? 'true' : 'false'}">\n`;
+    if (file.parsedContent) {
+      xml += `${indent}    <parsed_content>${escapeXML(file.parsedContent)}</parsed_content>\n`;
+    }
+    xml += `${indent}  </file>\n`;
+  }
+  xml += `${indent}</files>\n`;
+  return xml;
+}
+
+// Convert KBData to XML format matching the knowledge base schema expected by XMLParser
+function convertKBDataToXML(data: KBData, uuid: string): string {
   const now = new Date().toISOString();
 
   let xml = `<?xml version="1.0" encoding="UTF-8"?>
-<knowledge_base version="1.0">
+<knowledge_base>
   <metadata>
+    <uuid>${uuid}</uuid>
     <title>${escapeXML(data.title)}</title>
-    <created>${now}</created>
-    <modified>${now}</modified>
+    <version>${escapeXML(data.metadata.version || '1.0')}</version>
     <author>${escapeXML(data.metadata.author || '')}</author>
     <description>${escapeXML(data.metadata.description || '')}</description>
-    <version>${escapeXML(data.metadata.version || '1.0')}</version>
+    <created>${now}</created>
+    <modified>${now}</modified>
   </metadata>
-  <structure>
+
+  <modules>
 `;
 
   // Add modules
-  for (const module of data.modules) {
-    xml += `    <module id="${escapeXML(module.id)}" title="${escapeXML(module.title)}">\n`;
+  for (let moduleIndex = 0; moduleIndex < data.modules.length; moduleIndex++) {
+    const module = data.modules[moduleIndex];
+    xml += `    <module id="${escapeXML(module.id)}" order="${moduleIndex + 1}">\n`;
+    xml += `      <title>${escapeXML(module.title)}</title>\n`;
+    xml += `      <description></description>\n`;
 
-    // Add chapters
-    for (const chapter of module.chapters) {
-      xml += `      <chapter id="${escapeXML(chapter.id)}" title="${escapeXML(chapter.title)}">\n`;
-
-      // Add sections
-      for (const section of chapter.sections) {
-        xml += `        <section id="${escapeXML(section.id)}" title="${escapeXML(section.title)}">\n`;
-        xml += `          <content>\n`;
-        xml += `            <text>${escapeXML(section.content.text)}</text>\n`;
-
-        // Add file references
-        if (section.content.files.length > 0) {
-          xml += `            <files>\n`;
-          for (const file of section.content.files) {
-            xml += `              <file id="${escapeXML(file.id)}" name="${escapeXML(file.name)}" path="${escapeXML(file.path)}" type="${escapeXML(file.type)}" />\n`;
-          }
-          xml += `            </files>\n`;
-        }
-
-        xml += `          </content>\n`;
-        xml += `        </section>\n`;
-      }
-
-      xml += `      </chapter>\n`;
+    // Add module-level files as resources (if any)
+    if (module.files && module.files.length > 0) {
+      xml += renderFilesXML(module.files, '      ');
     }
 
+    xml += `      <chapters>\n`;
+
+    // Add chapters
+    for (let chapterIndex = 0; chapterIndex < module.chapters.length; chapterIndex++) {
+      const chapter = module.chapters[chapterIndex];
+      xml += `        <chapter id="${escapeXML(chapter.id)}" order="${chapterIndex + 1}">\n`;
+      xml += `          <title>${escapeXML(chapter.title)}</title>\n`;
+      xml += `          <description></description>\n`;
+
+      // Add chapter-level files (if any)
+      if (chapter.files && chapter.files.length > 0) {
+        xml += renderFilesXML(chapter.files, '          ');
+      }
+
+      xml += `          <sections>\n`;
+
+      // Add sections
+      for (let sectionIndex = 0; sectionIndex < chapter.sections.length; sectionIndex++) {
+        const section = chapter.sections[sectionIndex];
+        xml += `            <section id="${escapeXML(section.id)}" order="${sectionIndex + 1}">\n`;
+        xml += `              <title>${escapeXML(section.title)}</title>\n`;
+        xml += `              <content>\n`;
+
+        // Combine section text with parsed content from files
+        let sectionText = section.content.text || '';
+        const allElements: Array<{ type: string; content?: string; level?: number; items?: string[]; ordered?: boolean }> = [];
+
+        if (section.content.files && section.content.files.length > 0) {
+          for (const file of section.content.files) {
+            if (file.parsedContent) {
+              if (sectionText) sectionText += '\n\n';
+              sectionText += `[Content from ${file.name}]\n${file.parsedContent}`;
+            }
+            // Collect structured elements from parsed files
+            if (file.parsedElements && file.parsedElements.length > 0) {
+              allElements.push(...file.parsedElements);
+            }
+          }
+        }
+
+        xml += `                <text>${escapeXML(sectionText)}</text>\n`;
+
+        // Add structured elements if available
+        if (allElements.length > 0) {
+          xml += `                <elements>\n`;
+          for (let elemIdx = 0; elemIdx < allElements.length; elemIdx++) {
+            const elem = allElements[elemIdx];
+            if (elem.type === 'heading') {
+              xml += `                  <heading order="${elemIdx + 1}" level="${elem.level || 2}">${escapeXML(elem.content || '')}</heading>\n`;
+            } else if (elem.type === 'paragraph') {
+              xml += `                  <paragraph order="${elemIdx + 1}">${escapeXML(elem.content || '')}</paragraph>\n`;
+            } else if (elem.type === 'list') {
+              xml += `                  <list order="${elemIdx + 1}" ordered="${elem.ordered ? 'true' : 'false'}">\n`;
+              if (elem.items) {
+                for (const item of elem.items) {
+                  xml += `                    <item>${escapeXML(item)}</item>\n`;
+                }
+              }
+              xml += `                  </list>\n`;
+            }
+          }
+          xml += `                </elements>\n`;
+        }
+
+        // Add file references for sections
+        if (section.content.files && section.content.files.length > 0) {
+          xml += renderFilesXML(section.content.files, '                ');
+        }
+
+        xml += `              </content>\n`;
+        xml += `            </section>\n`;
+      }
+
+      xml += `          </sections>\n`;
+      xml += `        </chapter>\n`;
+    }
+
+    xml += `      </chapters>\n`;
     xml += `    </module>\n`;
   }
 
-  xml += `  </structure>
+  xml += `  </modules>
 </knowledge_base>`;
 
   return xml;
@@ -144,6 +253,12 @@ function App() {
   const [showSearch, setShowSearch] = useState(false);
   const [studyKbId, setStudyKbId] = useState<number | null>(null);
   const [studySectionId, setStudySectionId] = useState<string | null>(null);
+  const [fetchingModels, setFetchingModels] = useState<Record<string, boolean>>({});
+  const [modelErrors, setModelErrors] = useState<Record<string, string>>({});
+  const [customModelInputs, setCustomModelInputs] = useState<Record<string, string>>({});
+  const [viewingKB, setViewingKB] = useState<{ id: number; title: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ kb: KnowledgeBase; confirmText: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -200,11 +315,80 @@ function App() {
     }
   };
 
-  const handleSettingChange = (key: keyof AppSettings, value: string) => {
+  const handleSettingChange = (key: keyof AppSettings, value: string | number | string[]) => {
     setSettings(prev => ({
       ...prev,
       [key]: value
     }));
+  };
+
+  // Fetch available models for a provider using the API key
+  const fetchModelsForProvider = async (provider: 'openai' | 'anthropic' | 'google' | 'openrouter') => {
+    const apiKeyMap: Record<string, keyof AppSettings> = {
+      openai: 'openai_api_key',
+      anthropic: 'anthropic_api_key',
+      google: 'google_api_key',
+      openrouter: 'openrouter_api_key',
+    };
+
+    const modelsKeyMap: Record<string, keyof AppSettings> = {
+      openai: 'openai_models',
+      anthropic: 'anthropic_models',
+      google: 'google_models',
+      openrouter: 'openrouter_models',
+    };
+
+    const apiKey = settings[apiKeyMap[provider]];
+    if (!apiKey) {
+      setModelErrors(prev => ({ ...prev, [provider]: 'Please enter an API key first' }));
+      return;
+    }
+
+    setFetchingModels(prev => ({ ...prev, [provider]: true }));
+    setModelErrors(prev => ({ ...prev, [provider]: '' }));
+
+    try {
+      const result = await window.electronAPI.invoke('ai:fetchModels', provider, apiKey) as FetchModelsResult;
+
+      if (result.success) {
+        setSettings(prev => ({
+          ...prev,
+          [modelsKeyMap[provider]]: result.models
+        }));
+        setModelErrors(prev => ({ ...prev, [provider]: '' }));
+      } else {
+        setModelErrors(prev => ({ ...prev, [provider]: result.error || 'Failed to fetch models' }));
+      }
+    } catch (error) {
+      setModelErrors(prev => ({ ...prev, [provider]: (error as Error).message }));
+    } finally {
+      setFetchingModels(prev => ({ ...prev, [provider]: false }));
+    }
+  };
+
+  // Handle model selection change
+  const handleModelChange = (provider: 'openai' | 'anthropic' | 'google' | 'openrouter', model: string) => {
+    const modelKeyMap: Record<string, keyof AppSettings> = {
+      openai: 'openai_model',
+      anthropic: 'anthropic_model',
+      google: 'google_model',
+      openrouter: 'openrouter_model',
+    };
+
+    setSettings(prev => ({
+      ...prev,
+      [modelKeyMap[provider]]: model,
+      default_model: model, // Also set as default model
+    }));
+  };
+
+  // Handle custom model input
+  const handleCustomModelSubmit = (provider: 'openai' | 'anthropic' | 'google' | 'openrouter') => {
+    const customModel = customModelInputs[provider];
+    if (customModel && customModel.trim()) {
+      handleModelChange(provider, customModel.trim());
+      setCustomModelInputs(prev => ({ ...prev, [provider]: '' }));
+    }
   };
 
   const handleSearchNavigate = (kbId: number, sectionId: string) => {
@@ -239,6 +423,25 @@ function App() {
     } catch (error) {
       console.error('Failed to import knowledge base:', error);
       alert(`Failed to import: ${(error as Error).message}`);
+    }
+  };
+
+  const deleteKnowledgeBase = async () => {
+    if (!deleteConfirm || deleteConfirm.confirmText.toLowerCase() !== 'delete') {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await window.electronAPI.invoke('kb:delete', deleteConfirm.kb.id);
+      // Reload data
+      await loadData();
+      setDeleteConfirm(null);
+    } catch (error) {
+      console.error('Failed to delete knowledge base:', error);
+      alert(`Failed to delete: ${(error as Error).message}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -369,48 +572,71 @@ function App() {
         )}
 
         {currentView === 'browse' && (
-          <div className="view browse-view">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ margin: 0 }}>Knowledge Base Browser</h2>
-              <button className="primary-button" onClick={importKnowledgeBase}>
-                Import XML
-              </button>
-            </div>
-            {knowledgeBases.length === 0 ? (
-              <div className="empty-state">
-                <p>No knowledge bases available.</p>
-                <p>Import an XML file to get started.</p>
-                <button className="primary-button" onClick={getSampleXML}>
-                  View Sample XML Format
+          viewingKB ? (
+            <KBViewer
+              kbId={viewingKB.id}
+              kbTitle={viewingKB.title}
+              onBack={() => setViewingKB(null)}
+            />
+          ) : (
+            <div className="view browse-view">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h2 style={{ margin: 0 }}>Knowledge Base Library</h2>
+                <button className="primary-button" onClick={importKnowledgeBase}>
+                  Import XML
                 </button>
               </div>
-            ) : (
-              <div className="kb-list">
-                {knowledgeBases.map(kb => (
-                  <div key={kb.id} className="kb-card">
-                    <h3>{kb.title}</h3>
-                    <div className="kb-meta">
-                      <span>ID: {kb.id}</span>
-                      <span>Created: {new Date(kb.created_at).toLocaleDateString()}</span>
-                    </div>
-                    {kb.metadata && (
-                      <div className="kb-stats">
-                        {kb.metadata.totalModules && (
-                          <span>{kb.metadata.totalModules} modules</span>
-                        )}
-                        {kb.metadata.totalChapters && (
-                          <span>{kb.metadata.totalChapters} chapters</span>
-                        )}
-                        {kb.metadata.totalSections && (
-                          <span>{kb.metadata.totalSections} sections</span>
-                        )}
+              {knowledgeBases.length === 0 ? (
+                <div className="empty-state">
+                  <p>No knowledge bases available.</p>
+                  <p>Import an XML file to get started.</p>
+                  <button className="primary-button" onClick={getSampleXML}>
+                    View Sample XML Format
+                  </button>
+                </div>
+              ) : (
+                <div className="kb-list">
+                  {knowledgeBases.map(kb => (
+                    <div
+                      key={kb.id}
+                      className="kb-card"
+                      onClick={() => setViewingKB({ id: kb.id, title: kb.title })}
+                    >
+                      <button
+                        className="kb-delete-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteConfirm({ kb, confirmText: '' });
+                        }}
+                        title="Delete Knowledge Base"
+                      >
+                        X
+                      </button>
+                      <h3>{kb.title}</h3>
+                      <div className="kb-meta">
+                        <span>ID: {kb.id}</span>
+                        <span>Created: {new Date(kb.created_at).toLocaleDateString()}</span>
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                      {kb.metadata && (
+                        <div className="kb-stats">
+                          {kb.metadata.totalModules && (
+                            <span>{kb.metadata.totalModules as number} modules</span>
+                          )}
+                          {kb.metadata.totalChapters && (
+                            <span>{kb.metadata.totalChapters as number} chapters</span>
+                          )}
+                          {kb.metadata.totalSections && (
+                            <span>{kb.metadata.totalSections as number} sections</span>
+                          )}
+                        </div>
+                      )}
+                      <p className="kb-card-hint">Click to read and study</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
         )}
 
         {currentView === 'dashboard' && (
@@ -426,6 +652,7 @@ function App() {
             }}
             initialKbId={studyKbId}
             initialSectionId={studySectionId}
+            onNavigateToSettings={() => setCurrentView('settings')}
           />
         )}
 
@@ -434,18 +661,37 @@ function App() {
             <KBEditor
               onSave={async (data) => {
                 try {
-                  // Convert KBData to XML format
-                  const xmlContent = convertKBDataToXML(data);
-
                   // Generate UUID for new KB
                   const uuid = crypto.randomUUID();
+
+                  // Convert KBData to XML format
+                  const xmlContent = convertKBDataToXML(data, uuid);
+
+                  // Calculate module/chapter/section counts
+                  const totalModules = data.modules.length;
+                  const totalChapters = data.modules.reduce(
+                    (sum, m) => sum + m.chapters.length, 0
+                  );
+                  const totalSections = data.modules.reduce(
+                    (sum, m) => sum + m.chapters.reduce(
+                      (cSum, c) => cSum + c.sections.length, 0
+                    ), 0
+                  );
+
+                  // Build metadata with counts
+                  const metadata = {
+                    ...data.metadata,
+                    totalModules,
+                    totalChapters,
+                    totalSections,
+                  };
 
                   // Save to database
                   await window.electronAPI.invoke('kb:create', {
                     uuid,
                     title: data.title,
                     xml_content: xmlContent,
-                    metadata: data.metadata,
+                    metadata,
                   });
 
                   // Refresh the KB list
@@ -509,98 +755,328 @@ function App() {
               <p className="settings-description">
                 Configure AI provider API keys to enable AI-powered tutoring.
                 Your API keys are stored securely and never leave your device.
+                After entering an API key, click "Fetch Models" to validate and load available models.
               </p>
 
+              {/* Default Provider Selection */}
               <div className="setting-item">
-                <label htmlFor="openai-key">
-                  OpenAI API Key
-                  <span className="setting-status">
-                    {settings.openai_api_key ? ' (Configured)' : ' (Not configured)'}
-                  </span>
+                <label htmlFor="default-provider">
+                  Default AI Provider
                 </label>
-                <input
-                  id="openai-key"
-                  type="password"
-                  placeholder="sk-..."
-                  value={settings.openai_api_key || ''}
-                  onChange={(e) => handleSettingChange('openai_api_key', e.target.value)}
-                />
-                <span className="setting-hint">
-                  Get your API key from platform.openai.com
-                </span>
+                <select
+                  id="default-provider"
+                  value={settings.default_ai_provider || ''}
+                  onChange={(e) => handleSettingChange('default_ai_provider', e.target.value)}
+                  className="provider-select"
+                >
+                  <option value="">Select a provider...</option>
+                  {settings.openai_api_key && <option value="openai">OpenAI</option>}
+                  {settings.anthropic_api_key && <option value="anthropic">Anthropic</option>}
+                  {settings.google_api_key && <option value="google">Google AI</option>}
+                  {settings.openrouter_api_key && <option value="openrouter">OpenRouter</option>}
+                </select>
               </div>
 
-              <div className="setting-item">
-                <label htmlFor="anthropic-key">
-                  Anthropic API Key
-                  <span className="setting-status">
-                    {settings.anthropic_api_key ? ' (Configured)' : ' (Not configured)'}
+              {/* OpenAI */}
+              <div className="ai-provider-card">
+                <div className="provider-header">
+                  <h4>OpenAI</h4>
+                  <span className={`provider-status ${settings.openai_api_key && (settings.openai_models?.length || 0) > 0 ? 'valid' : settings.openai_api_key ? 'pending' : 'unconfigured'}`}>
+                    {settings.openai_api_key && (settings.openai_models?.length || 0) > 0 ? '[Valid]' : settings.openai_api_key ? '[Key Set]' : '[Not Configured]'}
                   </span>
-                </label>
-                <input
-                  id="anthropic-key"
-                  type="password"
-                  placeholder="sk-ant-..."
-                  value={settings.anthropic_api_key || ''}
-                  onChange={(e) => handleSettingChange('anthropic_api_key', e.target.value)}
-                />
-                <span className="setting-hint">
-                  Get your API key from console.anthropic.com
-                </span>
+                </div>
+                <div className="setting-item">
+                  <label htmlFor="openai-key">API Key</label>
+                  <div className="api-key-row">
+                    <input
+                      id="openai-key"
+                      type="password"
+                      placeholder="sk-..."
+                      value={settings.openai_api_key || ''}
+                      onChange={(e) => handleSettingChange('openai_api_key', e.target.value)}
+                    />
+                    <button
+                      className="fetch-models-btn"
+                      onClick={() => fetchModelsForProvider('openai')}
+                      disabled={!settings.openai_api_key || fetchingModels.openai}
+                    >
+                      {fetchingModels.openai ? 'Fetching...' : 'Fetch Models'}
+                    </button>
+                  </div>
+                  {modelErrors.openai && <span className="setting-error">{modelErrors.openai}</span>}
+                  <span className="setting-hint">Get your API key from platform.openai.com</span>
+                </div>
+                {(settings.openai_models?.length || 0) > 0 && (
+                  <div className="setting-item">
+                    <label htmlFor="openai-model">Model</label>
+                    <select
+                      id="openai-model"
+                      value={settings.openai_model || ''}
+                      onChange={(e) => handleModelChange('openai', e.target.value)}
+                    >
+                      <option value="">Select a model...</option>
+                      {settings.openai_models?.map(model => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="setting-item">
+                  <label htmlFor="openai-custom">Custom Model Name</label>
+                  <div className="custom-model-row">
+                    <input
+                      id="openai-custom"
+                      type="text"
+                      placeholder="Enter custom model name (e.g., gpt-4o)"
+                      value={customModelInputs.openai || ''}
+                      onChange={(e) => setCustomModelInputs(prev => ({ ...prev, openai: e.target.value }))}
+                      onKeyDown={(e) => e.key === 'Enter' && handleCustomModelSubmit('openai')}
+                    />
+                    <button
+                      className="use-model-btn"
+                      onClick={() => handleCustomModelSubmit('openai')}
+                      disabled={!customModelInputs.openai}
+                    >
+                      Use
+                    </button>
+                  </div>
+                  {settings.openai_model && <span className="current-model">Current: {settings.openai_model}</span>}
+                </div>
               </div>
 
-              <div className="setting-item">
-                <label htmlFor="google-key">
-                  Google AI API Key
-                  <span className="setting-status">
-                    {settings.google_api_key ? ' (Configured)' : ' (Not configured)'}
+              {/* Anthropic */}
+              <div className="ai-provider-card">
+                <div className="provider-header">
+                  <h4>Anthropic</h4>
+                  <span className={`provider-status ${settings.anthropic_api_key && (settings.anthropic_models?.length || 0) > 0 ? 'valid' : settings.anthropic_api_key ? 'pending' : 'unconfigured'}`}>
+                    {settings.anthropic_api_key && (settings.anthropic_models?.length || 0) > 0 ? '[Valid]' : settings.anthropic_api_key ? '[Key Set]' : '[Not Configured]'}
                   </span>
-                </label>
-                <input
-                  id="google-key"
-                  type="password"
-                  placeholder="AIza..."
-                  value={settings.google_api_key || ''}
-                  onChange={(e) => handleSettingChange('google_api_key', e.target.value)}
-                />
-                <span className="setting-hint">
-                  Get your API key from makersuite.google.com
-                </span>
+                </div>
+                <div className="setting-item">
+                  <label htmlFor="anthropic-key">API Key</label>
+                  <div className="api-key-row">
+                    <input
+                      id="anthropic-key"
+                      type="password"
+                      placeholder="sk-ant-..."
+                      value={settings.anthropic_api_key || ''}
+                      onChange={(e) => handleSettingChange('anthropic_api_key', e.target.value)}
+                    />
+                    <button
+                      className="fetch-models-btn"
+                      onClick={() => fetchModelsForProvider('anthropic')}
+                      disabled={!settings.anthropic_api_key || fetchingModels.anthropic}
+                    >
+                      {fetchingModels.anthropic ? 'Fetching...' : 'Fetch Models'}
+                    </button>
+                  </div>
+                  {modelErrors.anthropic && <span className="setting-error">{modelErrors.anthropic}</span>}
+                  <span className="setting-hint">Get your API key from console.anthropic.com</span>
+                </div>
+                {(settings.anthropic_models?.length || 0) > 0 && (
+                  <div className="setting-item">
+                    <label htmlFor="anthropic-model">Model</label>
+                    <select
+                      id="anthropic-model"
+                      value={settings.anthropic_model || ''}
+                      onChange={(e) => handleModelChange('anthropic', e.target.value)}
+                    >
+                      <option value="">Select a model...</option>
+                      {settings.anthropic_models?.map(model => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="setting-item">
+                  <label htmlFor="anthropic-custom">Custom Model Name</label>
+                  <div className="custom-model-row">
+                    <input
+                      id="anthropic-custom"
+                      type="text"
+                      placeholder="Enter custom model name (e.g., claude-3-5-sonnet-20241022)"
+                      value={customModelInputs.anthropic || ''}
+                      onChange={(e) => setCustomModelInputs(prev => ({ ...prev, anthropic: e.target.value }))}
+                      onKeyDown={(e) => e.key === 'Enter' && handleCustomModelSubmit('anthropic')}
+                    />
+                    <button
+                      className="use-model-btn"
+                      onClick={() => handleCustomModelSubmit('anthropic')}
+                      disabled={!customModelInputs.anthropic}
+                    >
+                      Use
+                    </button>
+                  </div>
+                  {settings.anthropic_model && <span className="current-model">Current: {settings.anthropic_model}</span>}
+                </div>
               </div>
 
-              <div className="setting-item">
-                <label htmlFor="openrouter-key">
-                  OpenRouter API Key
-                  <span className="setting-status">
-                    {settings.openrouter_api_key ? ' (Configured)' : ' (Not configured)'}
+              {/* Google AI */}
+              <div className="ai-provider-card">
+                <div className="provider-header">
+                  <h4>Google AI</h4>
+                  <span className={`provider-status ${settings.google_api_key && (settings.google_models?.length || 0) > 0 ? 'valid' : settings.google_api_key ? 'pending' : 'unconfigured'}`}>
+                    {settings.google_api_key && (settings.google_models?.length || 0) > 0 ? '[Valid]' : settings.google_api_key ? '[Key Set]' : '[Not Configured]'}
                   </span>
-                </label>
-                <input
-                  id="openrouter-key"
-                  type="password"
-                  placeholder="sk-or-..."
-                  value={settings.openrouter_api_key || ''}
-                  onChange={(e) => handleSettingChange('openrouter_api_key', e.target.value)}
-                />
-                <span className="setting-hint">
-                  Get your API key from openrouter.ai
-                </span>
+                </div>
+                <div className="setting-item">
+                  <label htmlFor="google-key">API Key</label>
+                  <div className="api-key-row">
+                    <input
+                      id="google-key"
+                      type="password"
+                      placeholder="AIza..."
+                      value={settings.google_api_key || ''}
+                      onChange={(e) => handleSettingChange('google_api_key', e.target.value)}
+                    />
+                    <button
+                      className="fetch-models-btn"
+                      onClick={() => fetchModelsForProvider('google')}
+                      disabled={!settings.google_api_key || fetchingModels.google}
+                    >
+                      {fetchingModels.google ? 'Fetching...' : 'Fetch Models'}
+                    </button>
+                  </div>
+                  {modelErrors.google && <span className="setting-error">{modelErrors.google}</span>}
+                  <span className="setting-hint">Get your API key from makersuite.google.com</span>
+                </div>
+                {(settings.google_models?.length || 0) > 0 && (
+                  <div className="setting-item">
+                    <label htmlFor="google-model">Model</label>
+                    <select
+                      id="google-model"
+                      value={settings.google_model || ''}
+                      onChange={(e) => handleModelChange('google', e.target.value)}
+                    >
+                      <option value="">Select a model...</option>
+                      {settings.google_models?.map(model => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="setting-item">
+                  <label htmlFor="google-custom">Custom Model Name</label>
+                  <div className="custom-model-row">
+                    <input
+                      id="google-custom"
+                      type="text"
+                      placeholder="Enter custom model name (e.g., gemini-1.5-pro)"
+                      value={customModelInputs.google || ''}
+                      onChange={(e) => setCustomModelInputs(prev => ({ ...prev, google: e.target.value }))}
+                      onKeyDown={(e) => e.key === 'Enter' && handleCustomModelSubmit('google')}
+                    />
+                    <button
+                      className="use-model-btn"
+                      onClick={() => handleCustomModelSubmit('google')}
+                      disabled={!customModelInputs.google}
+                    >
+                      Use
+                    </button>
+                  </div>
+                  {settings.google_model && <span className="current-model">Current: {settings.google_model}</span>}
+                </div>
+              </div>
+
+              {/* OpenRouter */}
+              <div className="ai-provider-card">
+                <div className="provider-header">
+                  <h4>OpenRouter</h4>
+                  <span className={`provider-status ${settings.openrouter_api_key && (settings.openrouter_models?.length || 0) > 0 ? 'valid' : settings.openrouter_api_key ? 'pending' : 'unconfigured'}`}>
+                    {settings.openrouter_api_key && (settings.openrouter_models?.length || 0) > 0 ? '[Valid]' : settings.openrouter_api_key ? '[Key Set]' : '[Not Configured]'}
+                  </span>
+                </div>
+                <div className="setting-item">
+                  <label htmlFor="openrouter-key">API Key</label>
+                  <div className="api-key-row">
+                    <input
+                      id="openrouter-key"
+                      type="password"
+                      placeholder="sk-or-..."
+                      value={settings.openrouter_api_key || ''}
+                      onChange={(e) => handleSettingChange('openrouter_api_key', e.target.value)}
+                    />
+                    <button
+                      className="fetch-models-btn"
+                      onClick={() => fetchModelsForProvider('openrouter')}
+                      disabled={!settings.openrouter_api_key || fetchingModels.openrouter}
+                    >
+                      {fetchingModels.openrouter ? 'Fetching...' : 'Fetch Models'}
+                    </button>
+                  </div>
+                  {modelErrors.openrouter && <span className="setting-error">{modelErrors.openrouter}</span>}
+                  <span className="setting-hint">Get your API key from openrouter.ai</span>
+                </div>
+                {(settings.openrouter_models?.length || 0) > 0 && (
+                  <div className="setting-item">
+                    <label htmlFor="openrouter-model">Model</label>
+                    <select
+                      id="openrouter-model"
+                      value={settings.openrouter_model || ''}
+                      onChange={(e) => handleModelChange('openrouter', e.target.value)}
+                    >
+                      <option value="">Select a model...</option>
+                      {settings.openrouter_models?.map(model => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="setting-item">
+                  <label htmlFor="openrouter-custom">Custom Model Name</label>
+                  <div className="custom-model-row">
+                    <input
+                      id="openrouter-custom"
+                      type="text"
+                      placeholder="Enter custom model name (e.g., openai/gpt-4)"
+                      value={customModelInputs.openrouter || ''}
+                      onChange={(e) => setCustomModelInputs(prev => ({ ...prev, openrouter: e.target.value }))}
+                      onKeyDown={(e) => e.key === 'Enter' && handleCustomModelSubmit('openrouter')}
+                    />
+                    <button
+                      className="use-model-btn"
+                      onClick={() => handleCustomModelSubmit('openrouter')}
+                      disabled={!customModelInputs.openrouter}
+                    >
+                      Use
+                    </button>
+                  </div>
+                  {settings.openrouter_model && <span className="current-model">Current: {settings.openrouter_model}</span>}
+                </div>
               </div>
             </div>
 
+            {/* AI Settings */}
             <div className="settings-section">
-              <h3>Application</h3>
+              <h3>AI Settings</h3>
               <div className="setting-item">
-                <label htmlFor="theme">Theme</label>
-                <select
-                  id="theme"
-                  value={settings.theme || 'dark'}
-                  onChange={(e) => handleSettingChange('theme', e.target.value)}
-                >
-                  <option value="dark">Dark</option>
-                  <option value="light">Light</option>
-                  <option value="auto">Auto</option>
-                </select>
+                <label htmlFor="temperature">
+                  Temperature
+                  <span className="setting-value">{settings.temperature ?? 0.7}</span>
+                </label>
+                <input
+                  id="temperature"
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="0.1"
+                  value={settings.temperature ?? 0.7}
+                  onChange={(e) => handleSettingChange('temperature', parseFloat(e.target.value))}
+                />
+                <span className="setting-hint">Lower = more focused, Higher = more creative (0-2)</span>
+              </div>
+              <div className="setting-item">
+                <label htmlFor="max-tokens">Max Tokens</label>
+                <input
+                  id="max-tokens"
+                  type="number"
+                  min="100"
+                  max="8000"
+                  step="100"
+                  value={settings.max_tokens ?? 2000}
+                  onChange={(e) => handleSettingChange('max_tokens', parseInt(e.target.value))}
+                />
+                <span className="setting-hint">Maximum response length (100-8000)</span>
               </div>
             </div>
 
@@ -629,6 +1105,49 @@ function App() {
               onNavigateToSection={handleSearchNavigate}
               onClose={() => setShowSearch(false)}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="delete-modal-overlay" onClick={() => setDeleteConfirm(null)}>
+          <div className="delete-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Delete Knowledge Base</h3>
+            <p className="delete-warning">
+              You are about to permanently delete:
+            </p>
+            <p className="delete-kb-name">"{deleteConfirm.kb.title}"</p>
+            <p className="delete-instruction">
+              This action cannot be undone. All associated progress, highlights, and test results will be deleted.
+            </p>
+            <p className="delete-confirm-instruction">
+              Type <strong>delete</strong> to confirm:
+            </p>
+            <input
+              type="text"
+              className="delete-confirm-input"
+              value={deleteConfirm.confirmText}
+              onChange={(e) => setDeleteConfirm({ ...deleteConfirm, confirmText: e.target.value })}
+              placeholder="Type 'delete' to confirm"
+              autoFocus
+            />
+            <div className="delete-modal-actions">
+              <button
+                className="cancel-button"
+                onClick={() => setDeleteConfirm(null)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                className="delete-button"
+                onClick={deleteKnowledgeBase}
+                disabled={deleteConfirm.confirmText.toLowerCase() !== 'delete' || isDeleting}
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Now'}
+              </button>
+            </div>
           </div>
         </div>
       )}

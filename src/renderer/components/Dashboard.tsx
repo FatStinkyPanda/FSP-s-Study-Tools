@@ -5,7 +5,7 @@ interface KnowledgeBase {
   uuid: string;
   title: string;
   created_at: string;
-  updated_at: string;
+  modified_at: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -351,7 +351,7 @@ function Dashboard({ onNavigateToStudy }: DashboardProps) {
           {selectedKBData && (
             <div className="kb-info-footer">
               <span className="kb-title">{selectedKBData.title}</span>
-              <span className="kb-updated">Last updated: {formatDate(selectedKBData.updated_at)}</span>
+              <span className="kb-updated">Last updated: {formatDate(selectedKBData.modified_at)}</span>
             </div>
           )}
         </>

@@ -583,3 +583,328 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* ==========================================
+   File Parsing and Management Styles
+   ========================================== */
+
+/* Add Files Button */
+.add-files-button {
+  padding: 6px 12px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.2s;
+}
+
+.add-files-button:hover {
+  background: #0056b3;
+}
+
+/* File Stats in Header */
+.file-stats {
+  padding: 4px 10px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #666;
+  border: 1px solid #ddd;
+}
+
+/* Parse Now Button */
+.parse-now-button {
+  padding: 6px 14px;
+  background: #fd7e14;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.parse-now-button:hover:not(:disabled) {
+  background: #e66d00;
+}
+
+.parse-now-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Enhanced File Item */
+.file-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 10px 12px;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  gap: 10px;
+}
+
+.file-item.parsed {
+  background: #d4edda;
+  border-color: #c3e6cb;
+}
+
+.file-item.error {
+  background: #f8d7da;
+  border-color: #f5c6cb;
+}
+
+.file-status {
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.file-status.parsed {
+  background: #28a745;
+  color: white;
+}
+
+.file-status.error {
+  background: #dc3545;
+  color: white;
+}
+
+.file-status.pending {
+  background: #6c757d;
+  color: white;
+}
+
+.file-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.file-actions .parse-button {
+  padding: 4px 10px;
+  background: #fd7e14;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+.file-actions .parse-button:hover {
+  background: #e66d00;
+}
+
+.file-error {
+  width: 100%;
+  font-size: 12px;
+  color: #dc3545;
+  margin-top: 5px;
+  padding-left: 35px;
+}
+
+/* Parse Progress Overlay */
+.parse-progress-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 4000;
+  animation: fadeIn 0.2s ease;
+}
+
+.parse-progress-modal {
+  background: white;
+  border-radius: 12px;
+  padding: 40px;
+  min-width: 400px;
+  max-width: 500px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  animation: scaleIn 0.2s ease;
+}
+
+.parse-progress-modal h3 {
+  margin: 0 0 25px 0;
+  font-size: 22px;
+  color: #333;
+}
+
+.progress-bar {
+  height: 12px;
+  background: #e9ecef;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 15px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #007bff, #0056b3);
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 8px 0;
+}
+
+.progress-current {
+  font-size: 13px;
+  color: #666;
+  margin: 0;
+  font-style: italic;
+}
+
+/* Dark Mode Overrides for KB Editor */
+@media (prefers-color-scheme: dark) {
+  .kb-editor {
+    background: #1a1a2e;
+  }
+
+  .editor-header,
+  .editor-metadata,
+  .structure-panel,
+  .details-panel {
+    background: #16213e;
+  }
+
+  .editor-header,
+  .editor-metadata {
+    border-color: #2a3f5f;
+  }
+
+  .structure-panel {
+    border-right-color: #2a3f5f;
+  }
+
+  .editor-header h2,
+  .panel-header h3,
+  .details-content h3,
+  .section-header h4 {
+    color: #e0e0e0;
+  }
+
+  .form-group label {
+    color: #b0b0b0;
+  }
+
+  .form-group input,
+  .form-group textarea {
+    background: #1a1a2e;
+    border-color: #2a3f5f;
+    color: #e0e0e0;
+  }
+
+  .tree-node:hover {
+    background: #1f3460;
+  }
+
+  .tree-node.selected {
+    background: #234780;
+    border-left-color: #5c9aff;
+  }
+
+  .node-title {
+    color: #e0e0e0;
+  }
+
+  .node-icon,
+  .file-icon {
+    color: #888;
+  }
+
+  .file-item {
+    background: #1a1a2e;
+    border-color: #2a3f5f;
+  }
+
+  .file-item.parsed {
+    background: #1a3d2e;
+    border-color: #2a5f4a;
+  }
+
+  .file-item.error {
+    background: #3d1a1a;
+    border-color: #5f2a2a;
+  }
+
+  .file-name {
+    color: #e0e0e0;
+  }
+
+  .node-actions button {
+    background: #2a3f5f;
+    border-color: #3a5070;
+    color: #b0b0b0;
+  }
+
+  .node-actions button:hover {
+    background: #3a5070;
+    border-color: #4a6080;
+  }
+
+  .stats {
+    background: #1a1a2e;
+  }
+
+  .stats p {
+    color: #b0b0b0;
+  }
+
+  .empty-state,
+  .empty-message {
+    color: #888;
+  }
+
+  .modal-content,
+  .parse-progress-modal {
+    background: #16213e;
+  }
+
+  .modal-content h3,
+  .parse-progress-modal h3 {
+    color: #e0e0e0;
+  }
+
+  .modal-content p {
+    color: #b0b0b0;
+  }
+
+  .progress-text {
+    color: #e0e0e0;
+  }
+
+  .progress-current {
+    color: #b0b0b0;
+  }
+
+  .progress-bar {
+    background: #2a3f5f;
+  }
+
+  .file-stats {
+    background: #2a3f5f;
+    border-color: #3a5070;
+    color: #b0b0b0;
+  }
+
+  .keyboard-hint {
+    color: #888;
+  }
+}

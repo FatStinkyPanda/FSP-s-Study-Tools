@@ -1,13 +1,80 @@
 import * as fs from 'fs';
-import { IParser, ParsedDocument } from './IParser';
+import { IParser, ParsedDocument, ParsedContentElement } from './IParser';
+
+// We need to use dynamic import for pdfjs-dist in Node.js/Electron environment
+let pdfjsLib: any = null;
 
 /**
- * Parser for PDF documents using pdf2json
+ * Text item extracted from PDF with position data
+ */
+interface PDFTextItem {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontSize: number;
+  fontName?: string;
+  page: number;
+}
+
+/**
+ * Image item detected in PDF
+ */
+interface PDFImageItem {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  page: number;
+}
+
+/**
+ * Parser for PDF documents using pdfjs-dist with position-based paragraph detection
  *
- * Uses pdf2json library which works reliably in Node.js/Electron environments
+ * Key improvements over pdf2json:
+ * - Better CID font and complex encoding support
+ * - More accurate text extraction
+ * - Proper character mapping for non-standard fonts
+ * - Detects paragraph breaks based on Y-position gaps
+ * - Identifies headings based on font size changes
  */
 export class PDFParser implements IParser {
   private supportedExtensions = ['.pdf'];
+
+  // Configuration for paragraph detection
+  // From analysis: normal line spacing within paragraphs is ~1.46x line height
+  // Paragraph breaks have gaps >2x line height (2.29x observed)
+  private readonly PARAGRAPH_GAP_MULTIPLIER = 2.0;  // Gap > 2.0x line height = new paragraph
+  private readonly HEADING_SIZE_MULTIPLIER = 1.15;  // Font > 1.15x base = heading
+  private readonly WORD_SPACE_THRESHOLD = 0.3;      // X gap > 0.3x char width = space
+  private readonly SAME_LINE_THRESHOLD = 0.5;       // Y diff < 0.5x line height = same line
+
+  /**
+   * Initialize pdfjs-dist library using the legacy build for Node.js compatibility
+   *
+   * Note: We use Function('return import')() to create a true dynamic import
+   * that bypasses TypeScript's compilation to require() which doesn't work with ESM
+   */
+  private async initPdfjs(): Promise<any> {
+    if (pdfjsLib) {
+      return pdfjsLib;
+    }
+
+    try {
+      // Use Function to create a real dynamic import that works with ESM modules
+      // TypeScript compiles `import()` to `require()` in CommonJS mode, which fails for .mjs files
+      // This workaround creates an actual runtime import() call
+      const dynamicImport = new Function('modulePath', 'return import(modulePath)');
+      const pdfjs = await dynamicImport('pdfjs-dist/legacy/build/pdf.mjs');
+      pdfjsLib = pdfjs;
+
+      return pdfjsLib;
+    } catch (error) {
+      console.error('Failed to initialize pdfjs-dist:', error);
+      throw new Error(`PDF library initialization failed: ${(error as Error).message}`);
+    }
+  }
 
   /**
    * Parse a PDF document from file path
@@ -22,114 +89,540 @@ export class PDFParser implements IParser {
   }
 
   /**
-   * Parse a PDF document from buffer
+   * Parse a PDF document from buffer with intelligent text extraction
    */
   async parseBuffer(buffer: Buffer, filePath: string): Promise<ParsedDocument> {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const PDFParser = require('pdf2json');
+      const pdfjs = await this.initPdfjs();
 
-      return new Promise((resolve, reject) => {
-        const pdfParser = new PDFParser();
+      // Convert Buffer to Uint8Array for pdfjs
+      const data = new Uint8Array(buffer);
 
-        // Set up error handler
-        pdfParser.on('pdfParser_dataError', (errData: any) => {
-          reject(new Error(`PDF parsing error: ${errData.parserError}`));
-        });
-
-        // Set up success handler
-        pdfParser.on('pdfParser_dataReady', (pdfData: any) => {
-          try {
-            // Extract text from all pages
-            const textParts: string[] = [];
-
-            if (pdfData.Pages && Array.isArray(pdfData.Pages)) {
-              for (const page of pdfData.Pages) {
-                if (page.Texts && Array.isArray(page.Texts)) {
-                  const pageTexts: string[] = [];
-
-                  for (const textItem of page.Texts) {
-                    if (textItem.R && Array.isArray(textItem.R)) {
-                      for (const run of textItem.R) {
-                        if (run.T) {
-                          // Decode URI-encoded text, fallback to raw text if decoding fails
-                          let decodedText: string;
-                          try {
-                            decodedText = decodeURIComponent(run.T);
-                          } catch (error) {
-                            // If URI decoding fails, use raw text
-                            decodedText = run.T;
-                          }
-                          pageTexts.push(decodedText);
-                        }
-                      }
-                    }
-                  }
-
-                  if (pageTexts.length > 0) {
-                    textParts.push(pageTexts.join(' '));
-                  }
-                }
-              }
-            }
-
-            const fullText = textParts.join('\n\n');
-            const warnings: string[] = [];
-
-            // Check if text extraction was successful
-            if (!fullText || fullText.trim().length === 0) {
-              warnings.push('PDF appears to be empty or contains only images. Text extraction may be incomplete.');
-            }
-
-            // Get file stats
-            fs.promises.stat(filePath).then(stats => {
-              resolve({
-                text: fullText,
-                filePath,
-                metadata: {
-                  title: pdfData.Meta?.Title || undefined,
-                  author: pdfData.Meta?.Author || undefined,
-                  subject: pdfData.Meta?.Subject || undefined,
-                  keywords: pdfData.Meta?.Keywords ? [pdfData.Meta.Keywords] : undefined,
-                  pages: pdfData.Pages?.length || 0,
-                  createdDate: pdfData.Meta?.CreationDate ? new Date(pdfData.Meta.CreationDate) : undefined,
-                  modifiedDate: pdfData.Meta?.ModDate ? new Date(pdfData.Meta.ModDate) : undefined,
-                  fileSize: stats.size,
-                  producer: pdfData.Meta?.Producer || undefined,
-                  creator: pdfData.Meta?.Creator || undefined,
-                },
-                warnings: warnings.length > 0 ? warnings : undefined,
-              });
-            }).catch(() => {
-              // If stat fails, resolve without file stats
-              resolve({
-                text: fullText,
-                filePath,
-                metadata: {
-                  title: pdfData.Meta?.Title || undefined,
-                  author: pdfData.Meta?.Author || undefined,
-                  subject: pdfData.Meta?.Subject || undefined,
-                  keywords: pdfData.Meta?.Keywords ? [pdfData.Meta.Keywords] : undefined,
-                  pages: pdfData.Pages?.length || 0,
-                  createdDate: pdfData.Meta?.CreationDate ? new Date(pdfData.Meta.CreationDate) : undefined,
-                  modifiedDate: pdfData.Meta?.ModDate ? new Date(pdfData.Meta.ModDate) : undefined,
-                  producer: pdfData.Meta?.Producer || undefined,
-                  creator: pdfData.Meta?.Creator || undefined,
-                },
-                warnings: warnings.length > 0 ? warnings : undefined,
-              });
-            });
-          } catch (error) {
-            reject(new Error(`Failed to process PDF data: ${(error as Error).message}`));
-          }
-        });
-
-        // Parse the buffer
-        pdfParser.parseBuffer(buffer);
+      // Load the PDF document with Node.js compatible options
+      const loadingTask = pdfjs.getDocument({
+        data,
+        useSystemFonts: true,
+        isEvalSupported: false,  // Required for Node.js
+        disableFontFace: true,   // Don't try to load fonts in Node.js
       });
+
+      const pdfDoc = await loadingTask.promise;
+
+      const warnings: string[] = [];
+      const textItems: PDFTextItem[] = [];
+      const imageItems: PDFImageItem[] = [];
+
+      // Extract text from each page
+      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.0 });
+
+        // Get text content
+        const textContent = await page.getTextContent({
+          includeMarkedContent: false,
+          disableCombineTextItems: false,
+        });
+
+        // Process text items
+        for (const item of textContent.items) {
+          if ('str' in item && item.str.trim()) {
+            // Transform coordinates - pdfjs uses bottom-left origin
+            const tx = item.transform;
+            const x = tx[4];
+            const y = viewport.height - tx[5]; // Flip Y for top-left origin
+            const fontSize = Math.sqrt(tx[0] * tx[0] + tx[1] * tx[1]);
+
+            textItems.push({
+              text: item.str,
+              x,
+              y,
+              width: item.width || (item.str.length * fontSize * 0.5),
+              height: item.height || fontSize * 1.2,
+              fontSize,
+              fontName: item.fontName,
+              page: pageNum,
+            });
+          }
+        }
+
+        // Get operator list for image detection
+        try {
+          const operatorList = await page.getOperatorList();
+          const ops = pdfjs.OPS;
+
+          for (let i = 0; i < operatorList.fnArray.length; i++) {
+            const fn = operatorList.fnArray[i];
+            if (fn === ops.paintImageXObject || fn === ops.paintInlineImageXObject) {
+              // Found an image - we can't easily get position from operator list
+              // but we know there are images
+              imageItems.push({
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+                page: pageNum,
+              });
+            }
+          }
+        } catch (opError) {
+          // Operator list extraction failed, continue without images
+          console.warn('Could not extract image info:', opError);
+        }
+      }
+
+      // Check for text extraction issues
+      if (textItems.length === 0) {
+        warnings.push('PDF appears to be empty or contains only images. Text extraction may be incomplete.');
+      }
+
+      // Check for potential encoding issues (garbled text detection)
+      const hasGarbledText = this.detectGarbledText(textItems);
+      if (hasGarbledText) {
+        warnings.push('PDF may contain custom fonts with non-standard encoding. Some text may not display correctly.');
+      }
+
+      // Build structured content from positioned text
+      const { elements, plainText } = this.buildStructuredContent(textItems, imageItems);
+
+      // Get file stats and metadata
+      const stats = await fs.promises.stat(filePath).catch(() => null);
+      const metadata = await pdfDoc.getMetadata().catch(() => ({ info: {} }));
+
+      return {
+        text: plainText,
+        elements,
+        filePath,
+        metadata: {
+          title: metadata.info?.Title || undefined,
+          author: metadata.info?.Author || undefined,
+          subject: metadata.info?.Subject || undefined,
+          keywords: metadata.info?.Keywords ? [metadata.info.Keywords] : undefined,
+          pages: pdfDoc.numPages,
+          createdDate: metadata.info?.CreationDate ? this.parsePdfDate(metadata.info.CreationDate) : undefined,
+          modifiedDate: metadata.info?.ModDate ? this.parsePdfDate(metadata.info.ModDate) : undefined,
+          fileSize: stats?.size,
+          producer: metadata.info?.Producer || undefined,
+          creator: metadata.info?.Creator || undefined,
+        },
+        warnings: warnings.length > 0 ? warnings : undefined,
+      };
     } catch (error) {
       throw new Error(`Failed to parse PDF: ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * Parse PDF date format (D:YYYYMMDDHHmmSS) to Date object
+   */
+  private parsePdfDate(dateStr: string): Date | undefined {
+    try {
+      // PDF date format: D:YYYYMMDDHHmmSSOHH'mm'
+      const match = dateStr.match(/D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?/);
+      if (match) {
+        const [, year, month, day, hour = '0', min = '0', sec = '0'] = match;
+        return new Date(
+          parseInt(year),
+          parseInt(month) - 1,
+          parseInt(day),
+          parseInt(hour),
+          parseInt(min),
+          parseInt(sec)
+        );
+      }
+    } catch {
+      // Ignore date parsing errors
+    }
+    return undefined;
+  }
+
+  /**
+   * Detect if text appears to be garbled (encoding issues)
+   */
+  private detectGarbledText(items: PDFTextItem[]): boolean {
+    if (items.length === 0) return false;
+
+    // Sample text for analysis
+    const sampleText = items.slice(0, 50).map(i => i.text).join('');
+
+    // Check for unusual character patterns that suggest encoding issues:
+    // 1. Too many non-ASCII characters in English text
+    // 2. Random-looking sequences of characters
+    // 3. Too few spaces relative to text length
+
+    const nonAsciiRatio = (sampleText.match(/[^\x20-\x7E]/g) || []).length / sampleText.length;
+    const spaceRatio = (sampleText.match(/\s/g) || []).length / sampleText.length;
+
+    // If more than 20% non-ASCII or less than 5% spaces in substantial text, likely garbled
+    if (sampleText.length > 50 && (nonAsciiRatio > 0.2 || spaceRatio < 0.05)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Build structured content from positioned text and image items
+   */
+  private buildStructuredContent(
+    items: PDFTextItem[],
+    imageItems: PDFImageItem[] = []
+  ): {
+    elements: ParsedContentElement[];
+    plainText: string;
+  } {
+    if (items.length === 0 && imageItems.length === 0) {
+      return { elements: [], plainText: '' };
+    }
+
+    if (items.length === 0) {
+      // Only images, no text
+      const imageElements: ParsedContentElement[] = imageItems.map((img, index) => ({
+        type: 'image' as const,
+        alt: `Image ${index + 1} on page ${img.page}`,
+        position: { page: img.page, x: img.x, y: img.y },
+      }));
+      return { elements: imageElements, plainText: '[Document contains images only]' };
+    }
+
+    // Sort items by page, then Y position (top to bottom), then X position (left to right)
+    const sortedItems = [...items].sort((a, b) => {
+      if (a.page !== b.page) return a.page - b.page;
+      // Use a tolerance for Y comparison to handle items on the same line
+      const yDiff = Math.abs(a.y - b.y);
+      const lineHeight = Math.max(a.height, b.height);
+      if (yDiff < lineHeight * 0.5) {
+        // Same line - sort by X
+        return a.x - b.x;
+      }
+      return a.y - b.y;
+    });
+
+    // Calculate average font size (base font) excluding outliers
+    const fontSizes = sortedItems.map(item => item.fontSize);
+    const avgFontSize = this.calculateMedian(fontSizes);
+
+    // Calculate average line height
+    const lineHeights = sortedItems.map(item => item.height);
+    const avgLineHeight = this.calculateMedian(lineHeights);
+
+    // Build content by detecting paragraphs and headings
+    const elements: ParsedContentElement[] = [];
+    const paragraphTexts: string[] = [];
+
+    let currentParagraph: string[] = [];
+    let currentPage = sortedItems[0].page;
+    let lastY = sortedItems[0].y;
+    let lastX = sortedItems[0].x;
+    let lastWidth = sortedItems[0].width;
+    let isCurrentHeading = false;
+    let currentHeadingLevel = 0;
+
+    for (let i = 0; i < sortedItems.length; i++) {
+      const item = sortedItems[i];
+      const isHeading = item.fontSize > avgFontSize * this.HEADING_SIZE_MULTIPLIER;
+
+      // Detect if we need to start a new paragraph
+      let startNewParagraph = false;
+      let addSpace = false;
+
+      if (item.page !== currentPage) {
+        // New page - definitely new paragraph
+        startNewParagraph = true;
+        currentPage = item.page;
+      } else {
+        const yGap = item.y - lastY;
+        const isSameLine = Math.abs(yGap) < avgLineHeight * this.SAME_LINE_THRESHOLD;
+
+        // Check for vertical gap indicating new paragraph
+        // Only start new paragraph if there's significant extra spacing (>1.8x normal line height)
+        if (yGap > avgLineHeight * this.PARAGRAPH_GAP_MULTIPLIER) {
+          startNewParagraph = true;
+        } else if (isHeading !== isCurrentHeading) {
+          // Font size changed significantly - likely heading/paragraph transition
+          startNewParagraph = true;
+        }
+
+        // Check horizontal spacing for word breaks
+        // Add space if there's a gap between text items on the same line
+        // Or if moving to a new line (return to left margin)
+        if (!startNewParagraph) {
+          if (isSameLine) {
+            // Same line - check for word gap
+            const xGap = item.x - (lastX + lastWidth);
+            if (xGap > item.fontSize * this.WORD_SPACE_THRESHOLD) {
+              addSpace = true;
+            }
+          } else {
+            // New line within same paragraph - add space unless last char was hyphen
+            const lastText = currentParagraph[currentParagraph.length - 1];
+            if (lastText && !lastText.endsWith('-')) {
+              addSpace = true;
+            } else if (lastText && lastText.endsWith('-')) {
+              // Remove hyphen for word continuation
+              currentParagraph[currentParagraph.length - 1] = lastText.slice(0, -1);
+            }
+          }
+        }
+      }
+
+      // Handle paragraph/heading transitions
+      if (startNewParagraph && currentParagraph.length > 0) {
+        const paragraphText = currentParagraph.join('').trim();
+        if (paragraphText) {
+          if (isCurrentHeading) {
+            elements.push({
+              type: 'heading',
+              content: paragraphText,
+              level: currentHeadingLevel,
+            });
+          } else {
+            elements.push({
+              type: 'paragraph',
+              content: paragraphText,
+            });
+          }
+          paragraphTexts.push(paragraphText);
+        }
+        currentParagraph = [];
+      }
+
+      // Update heading state
+      if (isHeading) {
+        isCurrentHeading = true;
+        currentHeadingLevel = this.calculateHeadingLevel(item.fontSize, avgFontSize);
+      } else if (startNewParagraph) {
+        isCurrentHeading = false;
+        currentHeadingLevel = 0;
+      }
+
+      // Add space if needed
+      if (addSpace && currentParagraph.length > 0) {
+        const lastText = currentParagraph[currentParagraph.length - 1];
+        if (!lastText.endsWith(' ') && !lastText.endsWith('\n')) {
+          currentParagraph.push(' ');
+        }
+      }
+
+      // Add the text
+      currentParagraph.push(item.text);
+
+      // Update position tracking
+      lastY = item.y;
+      lastX = item.x;
+      lastWidth = item.width || (item.text.length * item.fontSize * 0.5);
+    }
+
+    // Don't forget the last paragraph
+    if (currentParagraph.length > 0) {
+      const paragraphText = currentParagraph.join('').trim();
+      if (paragraphText) {
+        if (isCurrentHeading) {
+          elements.push({
+            type: 'heading',
+            content: paragraphText,
+            level: currentHeadingLevel,
+          });
+        } else {
+          elements.push({
+            type: 'paragraph',
+            content: paragraphText,
+          });
+        }
+        paragraphTexts.push(paragraphText);
+      }
+    }
+
+    // Post-process: Clean up and detect lists
+    const processedElements = this.postProcessElements(elements);
+
+    // Integrate images into the element flow
+    const finalElements = this.integrateImages(processedElements, imageItems);
+
+    // Build plain text with proper paragraph breaks
+    const plainText = paragraphTexts.join('\n\n');
+
+    return { elements: finalElements, plainText };
+  }
+
+  /**
+   * Integrate image elements into the content flow based on position
+   */
+  private integrateImages(
+    elements: ParsedContentElement[],
+    imageItems: PDFImageItem[]
+  ): ParsedContentElement[] {
+    if (imageItems.length === 0) {
+      return elements;
+    }
+
+    // Convert images to content elements with position info
+    const imageElements: ParsedContentElement[] = imageItems.map((img, index) => ({
+      type: 'image' as const,
+      alt: `Figure ${index + 1}`,
+      position: { page: img.page, x: img.x, y: img.y },
+    }));
+
+    // For now, append images at the end grouped by page
+    const pagesWithImages = new Set(imageItems.map(img => img.page));
+
+    if (pagesWithImages.size > 0) {
+      // Add a note about images
+      const imageNote: ParsedContentElement = {
+        type: 'paragraph',
+        content: `[This document contains ${imageItems.length} image(s) across ${pagesWithImages.size} page(s).]`,
+      };
+
+      return [...elements, imageNote, ...imageElements];
+    }
+
+    return elements;
+  }
+
+  /**
+   * Calculate heading level based on font size ratio
+   */
+  private calculateHeadingLevel(fontSize: number, baseFontSize: number): number {
+    const ratio = fontSize / baseFontSize;
+    if (ratio >= 2.0) return 1;
+    if (ratio >= 1.7) return 2;
+    if (ratio >= 1.4) return 3;
+    if (ratio >= 1.25) return 4;
+    return 5;
+  }
+
+  /**
+   * Calculate median of an array
+   */
+  private calculateMedian(values: number[]): number {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0
+      ? sorted[mid]
+      : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  /**
+   * Post-process elements to detect lists and clean up content
+   */
+  private postProcessElements(elements: ParsedContentElement[]): ParsedContentElement[] {
+    const processed: ParsedContentElement[] = [];
+    let currentList: string[] | null = null;
+    let isOrderedList = false;
+
+    // Regex patterns for list detection
+    const bulletPattern = /^[\u2022\u2023\u25E6\u2043\u2219•●○◦‣⁃\-\*]\s*/;
+    const numberedPattern = /^(\d+[\.\)]\s*|[a-zA-Z][\.\)]\s*)/;
+
+    for (const element of elements) {
+      if (element.type === 'paragraph' && element.content) {
+        const content = element.content.trim();
+
+        // Check for bullet list item
+        if (bulletPattern.test(content)) {
+          if (!currentList || isOrderedList) {
+            // Start new unordered list
+            if (currentList) {
+              processed.push({
+                type: 'list',
+                items: currentList,
+                ordered: isOrderedList,
+              });
+            }
+            currentList = [];
+            isOrderedList = false;
+          }
+          currentList.push(content.replace(bulletPattern, '').trim());
+          continue;
+        }
+
+        // Check for numbered list item
+        if (numberedPattern.test(content)) {
+          if (!currentList || !isOrderedList) {
+            // Start new ordered list
+            if (currentList) {
+              processed.push({
+                type: 'list',
+                items: currentList,
+                ordered: isOrderedList,
+              });
+            }
+            currentList = [];
+            isOrderedList = true;
+          }
+          currentList.push(content.replace(numberedPattern, '').trim());
+          continue;
+        }
+
+        // Not a list item - finalize any pending list
+        if (currentList) {
+          processed.push({
+            type: 'list',
+            items: currentList,
+            ordered: isOrderedList,
+          });
+          currentList = null;
+        }
+
+        // Clean up paragraph content
+        const cleanedContent = this.cleanParagraphContent(content);
+        if (cleanedContent) {
+          processed.push({
+            type: 'paragraph',
+            content: cleanedContent,
+          });
+        }
+      } else if (element.type === 'heading') {
+        // Finalize any pending list
+        if (currentList) {
+          processed.push({
+            type: 'list',
+            items: currentList,
+            ordered: isOrderedList,
+          });
+          currentList = null;
+        }
+
+        if (element.content?.trim()) {
+          processed.push({
+            type: 'heading',
+            content: element.content.trim(),
+            level: element.level,
+          });
+        }
+      } else {
+        processed.push(element);
+      }
+    }
+
+    // Finalize any remaining list
+    if (currentList) {
+      processed.push({
+        type: 'list',
+        items: currentList,
+        ordered: isOrderedList,
+      });
+    }
+
+    return processed;
+  }
+
+  /**
+   * Clean up paragraph content
+   */
+  private cleanParagraphContent(content: string): string {
+    // Remove excessive whitespace
+    let cleaned = content.replace(/\s+/g, ' ').trim();
+
+    // Fix common PDF extraction issues
+    // - Fix missing spaces after periods
+    cleaned = cleaned.replace(/\.([A-Z])/g, '. $1');
+    // - Fix missing spaces after commas
+    cleaned = cleaned.replace(/,([A-Za-z])/g, ', $1');
+    // - Remove orphan characters at start (common PDF artifact)
+    cleaned = cleaned.replace(/^[^\w\s]{1,2}\s+/, '');
+
+    return cleaned;
   }
 
   /**

@@ -10,6 +10,9 @@ import { ProgressManager } from '../core/progress';
 import { TestGenerator, TestQuestion } from '../core/tests';
 import { UpdateManager } from '../core/update';
 
+// Development mode detection
+const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
 class Application {
   private mainWindow: BrowserWindow | null = null;
   private databaseManager: DatabaseManager | null = null;
@@ -131,8 +134,8 @@ class Application {
     // Initialize Progress Manager
     this.progressManager = new ProgressManager(this.databaseManager);
 
-    // Initialize Test Generator
-    this.testGenerator = new TestGenerator(this.databaseManager, this.aiManager);
+    // Initialize Test Generator (with progressManager for adaptive mode)
+    this.testGenerator = new TestGenerator(this.databaseManager, this.aiManager, this.settingsManager, this.progressManager);
 
     // Initialize Update Manager
     this.updateManager = new UpdateManager();
@@ -161,12 +164,17 @@ class Application {
 
     // Load the index.html from dist/renderer/main_window/index.html
     const htmlPath = path.join(basePath, 'renderer', 'main_window', 'index.html');
-    console.log('Loading HTML from:', htmlPath);
+    if (isDev) console.log('Loading HTML from:', htmlPath);
     this.mainWindow.loadFile(htmlPath);
 
     // Open DevTools in development
     if (!app.isPackaged) {
       this.mainWindow.webContents.openDevTools();
+
+      // Run startup diagnostic in development
+      this.mainWindow.webContents.once('did-finish-load', () => {
+        this.runStartupDiagnostic();
+      });
     }
 
     this.mainWindow.on('closed', () => {
@@ -240,6 +248,39 @@ class Application {
       }
       const models = await this.aiManager.listModels(providerType as never);
       return Object.fromEntries(models);
+    });
+
+    // Fetch models for a specific provider with a given API key (for validation)
+    ipcMain.handle('ai:fetchModels', async (_event, providerType: string, apiKey: string) => {
+      const { OpenAIProvider } = await import('../core/ai/OpenAIProvider');
+      const { AnthropicProvider } = await import('../core/ai/AnthropicProvider');
+      const { GoogleAIProvider } = await import('../core/ai/GoogleAIProvider');
+      const { OpenRouterProvider } = await import('../core/ai/OpenRouterProvider');
+
+      let provider;
+      switch (providerType) {
+        case 'openai':
+          provider = new OpenAIProvider(apiKey);
+          break;
+        case 'anthropic':
+          provider = new AnthropicProvider(apiKey);
+          break;
+        case 'google':
+          provider = new GoogleAIProvider(apiKey);
+          break;
+        case 'openrouter':
+          provider = new OpenRouterProvider(apiKey);
+          break;
+        default:
+          throw new Error(`Unknown provider type: ${providerType}`);
+      }
+
+      try {
+        const models = await provider.listModels();
+        return { success: true, models };
+      } catch (error) {
+        return { success: false, error: (error as Error).message, models: [] };
+      }
     });
 
     ipcMain.handle('ai:validateProviders', async () => {
@@ -433,13 +474,11 @@ class Application {
         });
 
         if (result.canceled || result.filePaths.length === 0) {
-          console.log('File selection canceled');
           return { success: false };
         }
 
         const filePath = result.filePaths[0];
         const fileExt = path.extname(filePath).toLowerCase();
-        console.log(`Importing knowledge base from: ${filePath} (${fileExt})`);
 
         let kbId: number;
 
@@ -447,18 +486,13 @@ class Application {
         if (fileExt === '.xml') {
           // Read XML file content
           const xmlContent = fs.readFileSync(filePath, 'utf-8');
-          console.log(`XML file read successfully, size: ${xmlContent.length} bytes`);
 
           // Import as XML
-          console.log('Starting XML import...');
           kbId = await this.knowledgeBaseManager.importFromXML(xmlContent, filePath);
         } else {
           // Import as document (PDF, DOCX, TXT, etc.)
-          console.log('Starting document import...');
           kbId = await this.knowledgeBaseManager.importFromDocument(filePath);
         }
-
-        console.log(`Knowledge base imported successfully with ID: ${kbId}`);
         return { success: true, kbId };
       } catch (error) {
         console.error('Import failed:', error);
@@ -490,11 +524,11 @@ class Application {
       return this.settingsManager.get(key, defaultValue);
     });
 
-    ipcMain.handle('settings:set', async (_event, key: string, value: string | number | boolean, category?: string) => {
+    ipcMain.handle('settings:set', async (_event, key: string, value: string | number | boolean) => {
       if (!this.settingsManager) {
         throw new Error('Settings Manager not initialized');
       }
-      this.settingsManager.set(key, value, category);
+      this.settingsManager.set(key, value);
       return true;
     });
 
@@ -698,12 +732,24 @@ class Application {
       if (!this.testGenerator) {
         throw new Error('Test Generator not initialized');
       }
-      return await this.testGenerator.generateQuestionsFromKB(params as {
+      const typedParams = params as {
         kbId: number;
+        moduleIds?: string[];
+        chapterIds?: string[];
         sectionIds?: string[];
         questionsPerSection?: number;
+        totalQuestions?: number;
         difficulty?: 'easy' | 'medium' | 'hard';
-      });
+        includeExisting?: boolean;
+        adaptiveMode?: 'none' | 'low_scores' | 'least_studied';
+      };
+      try {
+        const questions = await this.testGenerator.generateQuestionsFromKB(typedParams);
+        return questions;
+      } catch (error) {
+        console.error('Question generation failed:', error);
+        throw error;
+      }
     });
 
     ipcMain.handle('test:validateQuestion', async (_event, question: unknown) => {
@@ -775,6 +821,412 @@ class Application {
         checkInterval: number;
       }>);
     });
+
+    // Highlight handlers
+    ipcMain.handle('highlight:create', async (_event, params: {
+      kb_id: number;
+      section_id: string;
+      start_offset: number;
+      end_offset: number;
+      text: string;
+      color?: string;
+      note?: string;
+    }) => {
+      if (!this.databaseManager) {
+        throw new Error('Database not initialized');
+      }
+
+      const result = this.databaseManager.execute(
+        `INSERT INTO highlights (kb_id, section_id, start_offset, end_offset, text, color, note)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [params.kb_id, params.section_id, params.start_offset, params.end_offset, params.text, params.color || 'yellow', params.note || null]
+      );
+
+      return result.lastInsertRowid;
+    });
+
+    ipcMain.handle('highlight:getAll', async (_event, kbId: number) => {
+      if (!this.databaseManager) {
+        throw new Error('Database not initialized');
+      }
+
+      return this.databaseManager.query(
+        `SELECT * FROM highlights WHERE kb_id = ? ORDER BY section_id, start_offset`,
+        [kbId]
+      );
+    });
+
+    ipcMain.handle('highlight:getForSection', async (_event, kbId: number, sectionId: string) => {
+      if (!this.databaseManager) {
+        throw new Error('Database not initialized');
+      }
+
+      return this.databaseManager.query(
+        `SELECT * FROM highlights WHERE kb_id = ? AND section_id = ? ORDER BY start_offset`,
+        [kbId, sectionId]
+      );
+    });
+
+    ipcMain.handle('highlight:update', async (_event, highlightId: number, updates: {
+      color?: string;
+      note?: string;
+    }) => {
+      if (!this.databaseManager) {
+        throw new Error('Database not initialized');
+      }
+
+      const setParts: string[] = [];
+      const values: unknown[] = [];
+
+      if (updates.color !== undefined) {
+        setParts.push('color = ?');
+        values.push(updates.color);
+      }
+      if (updates.note !== undefined) {
+        setParts.push('note = ?');
+        values.push(updates.note);
+      }
+
+      if (setParts.length > 0) {
+        values.push(highlightId);
+        this.databaseManager.execute(
+          `UPDATE highlights SET ${setParts.join(', ')} WHERE id = ?`,
+          values
+        );
+      }
+
+      return true;
+    });
+
+    ipcMain.handle('highlight:delete', async (_event, highlightId: number) => {
+      if (!this.databaseManager) {
+        throw new Error('Database not initialized');
+      }
+
+      this.databaseManager.execute(
+        `DELETE FROM highlights WHERE id = ?`,
+        [highlightId]
+      );
+
+      return true;
+    });
+
+    ipcMain.handle('highlight:deleteAllForKB', async (_event, kbId: number) => {
+      if (!this.databaseManager) {
+        throw new Error('Database not initialized');
+      }
+
+      this.databaseManager.execute(
+        `DELETE FROM highlights WHERE kb_id = ?`,
+        [kbId]
+      );
+
+      return true;
+    });
+
+    // File dialog and parsing operations
+    ipcMain.handle('dialog:openFiles', async (_event, options?: {
+      filters?: Array<{ name: string; extensions: string[] }>;
+      title?: string;
+    }) => {
+      if (!this.mainWindow) {
+        throw new Error('Main window not initialized');
+      }
+
+      try {
+        const defaultFilters = [
+          { name: 'All Supported Documents', extensions: ['pdf', 'docx', 'txt', 'text', 'md', 'markdown'] },
+          { name: 'PDF Documents', extensions: ['pdf'] },
+          { name: 'Word Documents', extensions: ['docx'] },
+          { name: 'Text Documents', extensions: ['txt', 'text', 'md', 'markdown'] },
+        ];
+
+        const result = await dialog.showOpenDialog(this.mainWindow, {
+          title: options?.title || 'Select Files',
+          filters: options?.filters || defaultFilters,
+          properties: ['openFile', 'multiSelections'],
+        });
+
+        if (result.canceled || result.filePaths.length === 0) {
+          return { success: false, files: [] };
+        }
+
+        // Return file info for each selected file
+        const files = result.filePaths.map(filePath => ({
+          path: filePath,
+          name: path.basename(filePath),
+          type: path.extname(filePath).toLowerCase().substring(1),
+        }));
+
+        return { success: true, files };
+      } catch (error) {
+        console.error('File dialog error:', error);
+        return { success: false, files: [], error: (error as Error).message };
+      }
+    });
+
+    ipcMain.handle('file:parse', async (_event, filePath: string) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+
+      try {
+        const { ParserManager } = await import('../core/parser');
+        const parserManager = new ParserManager();
+
+        if (!parserManager.isSupported(filePath)) {
+          return {
+            success: false,
+            error: `Unsupported file type: ${path.extname(filePath)}`,
+          };
+        }
+
+        const parsed = await parserManager.parseFile(filePath);
+
+        return {
+          success: true,
+          content: {
+            text: parsed.text,
+            elements: parsed.elements, // Include structured elements
+            metadata: parsed.metadata,
+            warnings: parsed.warnings,
+          },
+        };
+      } catch (error) {
+        console.error('File parse error:', error);
+        return {
+          success: false,
+          error: (error as Error).message,
+        };
+      }
+    });
+
+    ipcMain.handle('file:parseMultiple', async (_event, filePaths: string[]) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+
+      try {
+        const { ParserManager } = await import('../core/parser');
+        const parserManager = new ParserManager();
+
+        const results = await Promise.all(
+          filePaths.map(async (filePath) => {
+            try {
+              if (!parserManager.isSupported(filePath)) {
+                return {
+                  path: filePath,
+                  name: path.basename(filePath),
+                  success: false,
+                  error: `Unsupported file type: ${path.extname(filePath)}`,
+                };
+              }
+
+              const parsed = await parserManager.parseFile(filePath);
+
+              return {
+                path: filePath,
+                name: path.basename(filePath),
+                success: true,
+                content: {
+                  text: parsed.text,
+                  elements: parsed.elements, // Include structured elements
+                  metadata: parsed.metadata,
+                  warnings: parsed.warnings,
+                },
+              };
+            } catch (error) {
+              return {
+                path: filePath,
+                name: path.basename(filePath),
+                success: false,
+                error: (error as Error).message,
+              };
+            }
+          })
+        );
+
+        const successCount = results.filter(r => r.success).length;
+        const failCount = results.filter(r => !r.success).length;
+
+        return {
+          success: successCount > 0,
+          results,
+          summary: {
+            total: filePaths.length,
+            successful: successCount,
+            failed: failCount,
+          },
+        };
+      } catch (error) {
+        console.error('Multiple file parse error:', error);
+        return {
+          success: false,
+          error: (error as Error).message,
+          results: [],
+          summary: { total: filePaths.length, successful: 0, failed: filePaths.length },
+        };
+      }
+    });
+
+    // Debug handler for testing AI question generation
+    ipcMain.handle('debug:testAIGeneration', async (_event, kbId: number) => {
+      console.log(`[DEBUG] Testing AI question generation for KB ${kbId}`);
+
+      try {
+        // Check DB manager
+        if (!this.databaseManager) {
+          return { success: false, error: 'Database not initialized' };
+        }
+
+        // Check Test generator
+        if (!this.testGenerator) {
+          return { success: false, error: 'Test generator not initialized' };
+        }
+
+        // Get KB info
+        const kbs = this.databaseManager.query<{ id: number; title: string; xml_content: string }>(
+          'SELECT id, title, xml_content FROM knowledge_bases WHERE id = ?',
+          [kbId]
+        );
+
+        if (kbs.length === 0) {
+          return { success: false, error: `KB not found: ${kbId}` };
+        }
+
+        const kb = kbs[0];
+        console.log(`[DEBUG] KB: ${kb.title}, Content length: ${kb.xml_content?.length || 0}`);
+
+        // Get existing tests
+        const tests = this.testGenerator.getTestsForKB(kbId);
+        console.log(`[DEBUG] Existing tests: ${tests.length}`);
+
+        // Try to generate questions
+        console.log('[DEBUG] Generating questions with AI...');
+        const startTime = Date.now();
+
+        const questions = await this.testGenerator.generateQuestionsFromKB({
+          kbId,
+          questionsPerSection: 3,
+          difficulty: 'medium',
+        });
+
+        const elapsed = Date.now() - startTime;
+        console.log(`[DEBUG] Generated ${questions.length} questions in ${elapsed}ms`);
+
+        return {
+          success: true,
+          kbTitle: kb.title,
+          existingTests: tests.length,
+          generatedQuestions: questions.length,
+          elapsedMs: elapsed,
+          sampleQuestion: questions.length > 0 ? {
+            question: questions[0].question,
+            options: questions[0].options,
+            type: questions[0].type,
+          } : null,
+        };
+      } catch (error) {
+        console.error('[DEBUG] AI generation failed:', error);
+        return {
+          success: false,
+          error: (error as Error).message,
+        };
+      }
+    });
+
+    // Debug handler to list DB state
+    ipcMain.handle('debug:dbState', async () => {
+      if (!this.databaseManager) {
+        return { success: false, error: 'Database not initialized' };
+      }
+
+      const kbs = this.databaseManager.query<{ id: number; title: string }>(
+        'SELECT id, title FROM knowledge_bases'
+      );
+
+      const tests = this.databaseManager.query<{ id: number; kb_id: number; title: string; type: string; questions: string }>(
+        'SELECT id, kb_id, title, type, questions FROM practice_tests'
+      );
+
+      const testInfo = tests.map(t => {
+        let qCount = 0;
+        let qType = 'unknown';
+        try {
+          const qs = JSON.parse(t.questions);
+          qCount = qs.length;
+          if (qs.length > 0) {
+            qType = qs[0].type || 'multiple_choice';
+            if (qs[0].correctAnswer === 'self-assessed') {
+              qType = 'self-assessment';
+            }
+          }
+        } catch {}
+        return {
+          id: t.id,
+          kbId: t.kb_id,
+          title: t.title,
+          type: t.type,
+          questionCount: qCount,
+          questionType: qType,
+        };
+      });
+
+      return {
+        success: true,
+        knowledgeBases: kbs,
+        practiceTests: testInfo,
+      };
+    });
+  }
+
+  private async runStartupDiagnostic(): Promise<void> {
+    console.log('\n=== Startup Diagnostic ===');
+
+    try {
+      // Check database
+      if (!this.databaseManager) {
+        console.log('[WARN] Database not initialized');
+        return;
+      }
+
+      // List KBs with content info
+      const kbs = this.databaseManager.query<{ id: number; title: string; xml_content: string }>(
+        'SELECT id, title, xml_content FROM knowledge_bases'
+      );
+      console.log(`[INFO] Knowledge Bases: ${kbs.length}`);
+      kbs.forEach(kb => {
+        const contentLen = kb.xml_content?.length || 0;
+        const hasContent = contentLen > 500 ? '[OK]' : '[EMPTY]';
+        console.log(`  - [${kb.id}] ${kb.title} (${contentLen} chars) ${hasContent}`);
+      });
+
+      // List practice tests
+      const tests = this.databaseManager.query<{ id: number; kb_id: number; title: string; type: string }>(
+        'SELECT id, kb_id, title, type FROM practice_tests'
+      );
+      console.log(`[INFO] Practice Tests: ${tests.length}`);
+      tests.forEach(t => console.log(`  - [${t.id}] KB:${t.kb_id} "${t.title}" (${t.type})`));
+
+      // Check AI config
+      if (this.aiManager) {
+        const providers = this.aiManager.getConfiguredProviders();
+        console.log(`[INFO] AI Providers: ${providers.join(', ') || 'none'}`);
+      } else {
+        console.log('[WARN] AI Manager not initialized');
+      }
+
+      // If there are KBs without tests, suggest running a study session
+      const kbsWithoutTests = kbs.filter(kb => !tests.some(t => t.kb_id === kb.id));
+      if (kbsWithoutTests.length > 0) {
+        console.log(`\n[TIP] ${kbsWithoutTests.length} KB(s) have no practice tests yet.`);
+        console.log('      Starting a Study session will auto-generate AI questions.');
+      }
+
+      console.log('\n=== End Diagnostic ===\n');
+    } catch (error) {
+      console.error('[ERROR] Diagnostic failed:', error);
+    }
   }
 
   private async cleanup(): Promise<void> {

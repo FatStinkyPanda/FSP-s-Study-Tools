@@ -98,6 +98,30 @@ export interface Section {
   resources?: Resource[];
 }
 
+// Content element types for structured content
+export type ContentElementType = 'paragraph' | 'heading' | 'image' | 'list' | 'code' | 'blockquote' | 'table';
+
+export interface ContentElement {
+  type: ContentElementType;
+  order: number;
+  content?: string;           // For paragraph, heading, code, blockquote
+  level?: number;             // For headings (1-6)
+  src?: string;               // For images
+  alt?: string;               // For images
+  width?: number;             // For images
+  height?: number;            // For images
+  items?: string[];           // For lists
+  ordered?: boolean;          // For lists (true = numbered, false = bullets)
+  language?: string;          // For code blocks
+  rows?: string[][];          // For tables
+  headers?: string[];         // For table headers
+}
+
+export interface StructuredContent {
+  elements: ContentElement[];
+  rawText: string;            // Fallback plain text
+}
+
 export interface SectionContent {
   text: string;
   html?: string;
@@ -105,6 +129,8 @@ export interface SectionContent {
   images?: Image[];
   tables?: string[];
   diagrams?: string[];
+  // New structured content support
+  elements?: ContentElement[];
 }
 
 export interface Image {

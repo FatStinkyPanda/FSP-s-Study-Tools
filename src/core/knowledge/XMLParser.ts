@@ -6,6 +6,7 @@ import {
   SectionContent,
   Question,
   Resource,
+  ContentElement,
 } from '../../shared/types';
 
 export interface ParsedKnowledgeBase {
@@ -164,7 +165,163 @@ export class XMLParser {
       images: this.parseImages(contentData.images?.image),
       tables: this.parseArray(contentData.tables?.table),
       diagrams: this.parseArray(contentData.diagrams?.diagram),
+      elements: this.parseElements(contentData.elements),
     };
+  }
+
+  /**
+   * Parse structured content elements from XML
+   */
+  private parseElements(elementsData: any): ContentElement[] | undefined {
+    if (!elementsData) return undefined;
+
+    const elements: ContentElement[] = [];
+
+    // Parse headings
+    if (elementsData.heading) {
+      const headings = Array.isArray(elementsData.heading)
+        ? elementsData.heading
+        : [elementsData.heading];
+
+      for (const h of headings) {
+        if (!h) continue;
+        const content = typeof h === 'string' ? h : (h._ || h.content || '');
+        const order = typeof h === 'string' ? 0 : parseInt(h.order || '0', 10);
+        const level = typeof h === 'string' ? 1 : parseInt(h.level || '1', 10);
+
+        elements.push({
+          type: 'heading',
+          order,
+          content,
+          level: Math.min(Math.max(level, 1), 6), // Clamp between 1-6
+        });
+      }
+    }
+
+    // Parse paragraphs
+    if (elementsData.paragraph) {
+      const paragraphs = Array.isArray(elementsData.paragraph)
+        ? elementsData.paragraph
+        : [elementsData.paragraph];
+
+      for (const p of paragraphs) {
+        if (!p) continue;
+        const content = typeof p === 'string' ? p : (p._ || p.content || '');
+        const order = typeof p === 'string' ? 0 : parseInt(p.order || '0', 10);
+
+        elements.push({
+          type: 'paragraph',
+          order,
+          content,
+        });
+      }
+    }
+
+    // Parse lists
+    if (elementsData.list) {
+      const lists = Array.isArray(elementsData.list)
+        ? elementsData.list
+        : [elementsData.list];
+
+      for (const l of lists) {
+        if (!l) continue;
+        const order = parseInt(l.order || '0', 10);
+        const ordered = l.ordered === 'true' || l.ordered === true;
+
+        // Parse list items
+        let items: string[] = [];
+        if (l.item) {
+          const itemData = Array.isArray(l.item) ? l.item : [l.item];
+          items = itemData.map((item: any) =>
+            typeof item === 'string' ? item : (item._ || item.content || '')
+          );
+        } else if (l.items) {
+          // Alternative format: comma-separated or nested
+          if (typeof l.items === 'string') {
+            items = l.items.split(',').map((i: string) => i.trim());
+          } else if (l.items.item) {
+            const itemData = Array.isArray(l.items.item) ? l.items.item : [l.items.item];
+            items = itemData.map((item: any) =>
+              typeof item === 'string' ? item : (item._ || '')
+            );
+          }
+        }
+
+        elements.push({
+          type: 'list',
+          order,
+          items,
+          ordered,
+        });
+      }
+    }
+
+    // Parse images
+    if (elementsData.image) {
+      const images = Array.isArray(elementsData.image)
+        ? elementsData.image
+        : [elementsData.image];
+
+      for (const img of images) {
+        if (!img) continue;
+        const order = parseInt(img.order || '0', 10);
+
+        elements.push({
+          type: 'image',
+          order,
+          src: img.src || img.path || img.url,
+          alt: img.alt || img.caption || img.ocr_text,
+        });
+      }
+    }
+
+    // Parse code blocks
+    if (elementsData.code) {
+      const codeBlocks = Array.isArray(elementsData.code)
+        ? elementsData.code
+        : [elementsData.code];
+
+      for (const c of codeBlocks) {
+        if (!c) continue;
+        const content = typeof c === 'string' ? c : (c._ || c.content || '');
+        const order = typeof c === 'string' ? 0 : parseInt(c.order || '0', 10);
+        const language = typeof c === 'string' ? undefined : c.language;
+
+        elements.push({
+          type: 'code',
+          order,
+          content,
+          language,
+        });
+      }
+    }
+
+    // Parse blockquotes
+    if (elementsData.blockquote) {
+      const quotes = Array.isArray(elementsData.blockquote)
+        ? elementsData.blockquote
+        : [elementsData.blockquote];
+
+      for (const q of quotes) {
+        if (!q) continue;
+        const content = typeof q === 'string' ? q : (q._ || q.content || '');
+        const order = typeof q === 'string' ? 0 : parseInt(q.order || '0', 10);
+
+        elements.push({
+          type: 'blockquote',
+          order,
+          content,
+        });
+      }
+    }
+
+    // Sort by order if we have elements
+    if (elements.length > 0) {
+      elements.sort((a, b) => (a.order || 0) - (b.order || 0));
+      return elements;
+    }
+
+    return undefined;
   }
 
   /**

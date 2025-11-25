@@ -1,0 +1,247 @@
+/* Test Configuration Styles */
+
+.test-configuration {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-primary);
+  padding: 1.5rem;
+}
+
+.test-config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.test-config-header h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.5rem;
+}
+
+.test-config-content {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 1.5rem;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Content Selection Panel */
+.test-config-selection {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow: hidden;
+}
+
+.selection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.selection-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.selection-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--accent-color);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.content-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+/* Tree Structure */
+.tree-module {
+  margin-bottom: 0.5rem;
+}
+
+.tree-chapters {
+  margin-left: 1.5rem;
+  border-left: 1px solid var(--border-color);
+  padding-left: 0.75rem;
+}
+
+.tree-chapter {
+  margin-bottom: 0.25rem;
+}
+
+.tree-sections {
+  margin-left: 1.5rem;
+  border-left: 1px solid var(--border-color);
+  padding-left: 0.75rem;
+}
+
+.tree-item {
+  display: flex;
+  align-items: center;
+  padding: 0.35rem 0;
+  gap: 0.5rem;
+}
+
+.module-item {
+  font-weight: 500;
+}
+
+.chapter-item {
+  font-weight: 400;
+}
+
+.section-item {
+  padding-left: 1.75rem; /* Align with chapters that have expand button */
+}
+
+.tree-expand {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 0.9rem;
+  padding: 0;
+  width: 1.5rem;
+  text-align: center;
+}
+
+.tree-expand:hover {
+  color: var(--accent-color);
+}
+
+.tree-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  flex: 1;
+}
+
+.tree-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.tree-label input[type="checkbox"]:disabled {
+  opacity: 0.5;
+}
+
+.tree-title {
+  color: var(--text-primary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-count {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.selection-summary {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+/* Test Options Panel */
+.test-config-options {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 1rem;
+  height: fit-content;
+}
+
+.test-config-options h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.option-group {
+  margin-bottom: 1.25rem;
+}
+
+.option-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.option-group input[type="number"],
+.option-group select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.option-group input[type="number"]:focus,
+.option-group select:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+.option-hint {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+/* Footer */
+.test-config-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Responsive */
+@media (max-width: 800px) {
+  .test-config-content {
+    grid-template-columns: 1fr;
+  }
+
+  .test-config-options {
+    order: -1;
+  }
+}
