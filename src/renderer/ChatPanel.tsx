@@ -477,12 +477,30 @@ IMPORTANT: You have full access to the knowledge base structure and content. Whe
       // Build contextual message with search results
       let contextualMessage = '';
 
+      // Debug: Log what content is available
+      console.log('[ChatPanel] sendMessage - sectionContent length:', sectionContent?.length || 0);
+      console.log('[ChatPanel] sendMessage - currentTopic:', currentTopic || 'none');
+
+      // Add the current section content that the student is viewing
+      // This is the PRIMARY context - the actual material being studied
+      if (sectionContent) {
+        const truncatedContent = sectionContent.length > 4000
+          ? sectionContent.substring(0, 4000) + '...[truncated]'
+          : sectionContent;
+        contextualMessage += `=== CURRENT SECTION CONTENT (Student is viewing this material) ===\n${truncatedContent}\n=== END CURRENT SECTION ===\n\n`;
+      }
+
+      // Add current topic/location context
+      if (currentTopic) {
+        contextualMessage += `Current location: ${currentTopic}\n\n`;
+      }
+
       // Add context about current question if available
       if (currentQuestion) {
         contextualMessage += `Context: The student is working on this question: "${currentQuestion}"\n\n`;
       }
 
-      // Add relevant KB content found through search
+      // Add relevant KB content found through search (for broader context)
       if (relevantContent) {
         contextualMessage += `${relevantContent}\n\n`;
       }

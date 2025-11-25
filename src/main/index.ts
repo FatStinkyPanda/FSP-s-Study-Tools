@@ -9,6 +9,8 @@ import { SettingsManager } from '../core/settings';
 import { ProgressManager } from '../core/progress';
 import { TestGenerator, TestQuestion } from '../core/tests';
 import { UpdateManager } from '../core/update';
+import { KB_TOOLS, AIAgentToolExecutor, createToolResultMessage } from '../core/ai/AIAgentTools';
+import { AIMessage, AIToolCall } from '../shared/ai-types';
 
 // Development mode detection
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -317,6 +319,9 @@ class Application {
       if (!this.aiManager) {
         throw new Error('AI Manager not initialized');
       }
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
 
       // Add user message to conversation
       await this.conversationManager.addMessage(conversationId, message as never);
@@ -328,35 +333,103 @@ class Application {
       }
 
       try {
+        // Get conversation to find the kbId
+        const conversation = await this.conversationManager.loadConversation(conversationId);
+        if (!conversation) {
+          throw new Error(`Conversation ${conversationId} not found`);
+        }
+
+        const kbId = conversation.kbId;
+        const useTools = kbId > 0; // Only use tools if there's a valid KB ID
+
+        // Create tool executor if we have a KB
+        let toolExecutor: AIAgentToolExecutor | null = null;
+        if (useTools) {
+          toolExecutor = new AIAgentToolExecutor(this.knowledgeBaseManager, kbId);
+        }
+
         // Get conversation messages
-        const messages = await this.conversationManager.getMessages(conversationId);
+        let messages = await this.conversationManager.getMessages(conversationId);
 
         // Debug: Log what messages are being sent to AI
         console.log('[conversation:addMessage] Total messages:', messages.length);
-        messages.forEach((msg, idx) => {
-          const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-          console.log(`[conversation:addMessage] Message ${idx} (${msg.role}):`, content.substring(0, 200));
-        });
+        console.log('[conversation:addMessage] KB ID:', kbId, 'useTools:', useTools);
 
-        // Call AI provider
-        const response = await this.aiManager.createCompletion({
-          messages: messages as never,
-        });
+        // Tool calling loop - max 5 iterations to prevent infinite loops
+        const MAX_TOOL_ITERATIONS = 5;
+        let iteration = 0;
+        let finalResponse: { role: 'assistant'; content: string; tool_calls?: AIToolCall[] } | null = null;
 
-        // Extract assistant message from response
-        const assistantMessage = {
-          role: 'assistant' as const,
-          content: response.choices[0].message.content,
-        };
+        while (iteration < MAX_TOOL_ITERATIONS) {
+          iteration++;
+          console.log(`[conversation:addMessage] Iteration ${iteration}`);
 
-        // Add AI response to conversation
-        await this.conversationManager.addMessage(conversationId, assistantMessage as never);
+          // Call AI provider with tools if available
+          const response = await this.aiManager.createCompletion({
+            messages: messages as never,
+            tools: useTools ? KB_TOOLS : undefined,
+            toolChoice: useTools ? 'auto' : undefined,
+          });
+
+          const choice = response.choices[0];
+          const assistantMessage = choice.message;
+
+          console.log('[conversation:addMessage] AI response:', {
+            hasContent: !!assistantMessage.content,
+            hasToolCalls: !!(assistantMessage as { tool_calls?: AIToolCall[] }).tool_calls?.length,
+            finishReason: choice.finishReason
+          });
+
+          // Check if AI wants to call tools
+          const toolCalls = (assistantMessage as { tool_calls?: AIToolCall[] }).tool_calls;
+          if (toolCalls && toolCalls.length > 0 && toolExecutor) {
+            console.log(`[conversation:addMessage] AI requested ${toolCalls.length} tool call(s)`);
+
+            // Add assistant message with tool calls to messages array
+            const assistantWithTools: AIMessage = {
+              role: 'assistant',
+              content: assistantMessage.content || '',
+              tool_calls: toolCalls
+            };
+            messages = [...messages, assistantWithTools];
+
+            // Execute each tool call and add results
+            for (const toolCall of toolCalls) {
+              console.log(`[conversation:addMessage] Executing tool: ${toolCall.function.name}`);
+              const result = await toolExecutor.executeTool(toolCall);
+              console.log(`[conversation:addMessage] Tool result length: ${result.length}`);
+
+              const toolResultMessage = createToolResultMessage(toolCall.id, result);
+              messages = [...messages, toolResultMessage];
+            }
+
+            // Continue loop to get AI's response after tool results
+            continue;
+          }
+
+          // No tool calls - this is the final response
+          finalResponse = {
+            role: 'assistant' as const,
+            content: assistantMessage.content || 'I apologize, but I could not generate a response.',
+          };
+          break;
+        }
+
+        if (!finalResponse) {
+          finalResponse = {
+            role: 'assistant' as const,
+            content: 'I apologize, but I reached the maximum number of tool calls. Please try asking your question differently.',
+          };
+        }
+
+        // Add final AI response to conversation (for persistence)
+        await this.conversationManager.addMessage(conversationId, finalResponse as never);
 
         // Return the response
         return {
           success: true,
-          message: assistantMessage,
-          usage: response.usage,
+          message: finalResponse,
+          toolIterations: iteration,
         };
       } catch (error) {
         console.error('AI completion failed:', error);
