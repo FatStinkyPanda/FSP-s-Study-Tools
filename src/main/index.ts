@@ -296,6 +296,10 @@ class Application {
       if (!this.conversationManager) {
         throw new Error('Conversation Manager not initialized');
       }
+      // Debug: Log what system message is being passed
+      console.log('[conversation:create] kbId:', kbId);
+      console.log('[conversation:create] systemMessage length:', systemMessage?.length || 0);
+      console.log('[conversation:create] systemMessage preview:', systemMessage?.substring(0, 300) || 'NO SYSTEM MESSAGE');
       return this.conversationManager.createConversation(kbId, systemMessage);
     });
 
@@ -326,6 +330,13 @@ class Application {
       try {
         // Get conversation messages
         const messages = await this.conversationManager.getMessages(conversationId);
+
+        // Debug: Log what messages are being sent to AI
+        console.log('[conversation:addMessage] Total messages:', messages.length);
+        messages.forEach((msg, idx) => {
+          const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+          console.log(`[conversation:addMessage] Message ${idx} (${msg.role}):`, content.substring(0, 200));
+        });
 
         // Call AI provider
         const response = await this.aiManager.createCompletion({

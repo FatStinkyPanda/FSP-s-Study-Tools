@@ -160,12 +160,29 @@ export class GoogleAIProvider extends BaseAIProvider {
   }
 
   protected convertMessages(messages: AIMessage[]): GoogleMessage[] {
-    return messages
+    // Extract system message content
+    const systemMessage = messages.find(m => m.role === 'system');
+
+    // Filter to user/assistant messages only
+    const conversationMessages = messages
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .map(msg => ({
         role: msg.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: msg.content }],
       }));
+
+    // If there's a system message, prepend it as context to the first user message
+    // This ensures the AI has the system context even though Google API doesn't support system role directly
+    if (systemMessage && conversationMessages.length > 0) {
+      const firstUserIndex = conversationMessages.findIndex(m => m.role === 'user');
+      if (firstUserIndex !== -1) {
+        const originalContent = conversationMessages[firstUserIndex].parts[0].text;
+        conversationMessages[firstUserIndex].parts[0].text =
+          `[System Context]\n${systemMessage.content}\n\n[User Message]\n${originalContent}`;
+      }
+    }
+
+    return conversationMessages;
   }
 
   protected convertResponse(response: GoogleResponse): AICompletionResponse {

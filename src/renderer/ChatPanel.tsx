@@ -90,12 +90,42 @@ function ChatPanel({
   }>>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize conversation when panel opens
+  // Track the last KB ID to detect when user switches KBs
+  const lastKbIdRef = useRef<number | undefined>(undefined);
+
+  // Reset conversation when KB changes (user switched to a different KB)
   useEffect(() => {
-    if (isOpen && !conversationId && (knowledgeBaseId || isGlobalMode)) {
+    if (knowledgeBaseId !== undefined && lastKbIdRef.current !== undefined &&
+        knowledgeBaseId !== lastKbIdRef.current && conversationId !== null) {
+      console.log('[ChatPanel] KB changed, resetting conversation:', {
+        from: lastKbIdRef.current,
+        to: knowledgeBaseId
+      });
+      setMessages([]);
+      setConversationId(null);
+    }
+    lastKbIdRef.current = knowledgeBaseId;
+  }, [knowledgeBaseId]);
+
+  // Initialize conversation when panel opens and KB structure is available
+  // For non-global mode, wait for kbStructure to be loaded before creating conversation
+  // This ensures the system message contains the full KB context
+  useEffect(() => {
+    const shouldInitialize = isOpen && !conversationId && (
+      isGlobalMode || // Global mode doesn't need kbStructure
+      (knowledgeBaseId && kbStructure && kbStructure.modules.length > 0) // KB mode needs structure
+    );
+
+    if (shouldInitialize) {
+      console.log('[ChatPanel] Initializing conversation with KB structure:', {
+        isGlobalMode,
+        knowledgeBaseId,
+        hasKbStructure: !!kbStructure,
+        moduleCount: kbStructure?.modules?.length || 0
+      });
       initializeConversation();
     }
-  }, [isOpen, knowledgeBaseId, isGlobalMode]);
+  }, [isOpen, knowledgeBaseId, isGlobalMode, kbStructure]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -246,6 +276,16 @@ IMPORTANT: You have full access to the knowledge base structure and content. Whe
       };
 
       const systemMessage = buildSystemMessage();
+
+      // Debug: Log the system message to see KB structure
+      console.log('[ChatPanel] System message length:', systemMessage.length);
+      console.log('[ChatPanel] kbStructure provided:', !!kbStructure);
+      console.log('[ChatPanel] kbStructure modules:', kbStructure?.modules?.length || 0);
+      if (kbStructure && kbStructure.modules.length > 0) {
+        console.log('[ChatPanel] First module:', kbStructure.modules[0].title);
+        console.log('[ChatPanel] First module chapters:', kbStructure.modules[0].chapters.map(c => c.title));
+      }
+      console.log('[ChatPanel] System message preview:', systemMessage.substring(0, 500));
 
       // For global mode, use 0 or null as the KB ID
       const kbIdForConversation = isGlobalMode ? 0 : knowledgeBaseId;
