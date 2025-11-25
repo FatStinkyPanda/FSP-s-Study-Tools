@@ -7,6 +7,7 @@ import {
   Question,
   Resource,
   ContentElement,
+  ParsedFile,
 } from '../../shared/types';
 
 export interface ParsedKnowledgeBase {
@@ -116,12 +117,14 @@ export class XMLParser {
         console.log(`[XMLParser.parseModules] Module ${index} keys:`, Object.keys(m || {}));
         console.log(`[XMLParser.parseModules] Module ${index} chapters:`, m?.chapters);
         console.log(`[XMLParser.parseModules] Module ${index} chapters?.chapter:`, m?.chapters?.chapter);
+        console.log(`[XMLParser.parseModules] Module ${index} files:`, m?.files);
 
         return {
           id: m.id || `module-${index + 1}`,
           title: m.title || `Module ${index + 1}`,
           description: m.description,
           order: parseInt(m.order || String(index + 1), 10),
+          files: this.parseFiles(m.files?.file || []),
           chapters: this.parseChapters(m.chapters?.chapter || []),
         };
       });
@@ -143,6 +146,7 @@ export class XMLParser {
         title: c.title || `Chapter ${index + 1}`,
         description: c.description,
         order: parseInt(c.order || String(index + 1), 10),
+        files: this.parseFiles(c.files?.file || []),
         sections: this.parseSections(c.sections?.section || []),
       }));
   }
@@ -385,6 +389,26 @@ export class XMLParser {
         title: r.title || `Resource ${index + 1}`,
         url: r.url || r.href,
         description: r.description,
+      }));
+  }
+
+  /**
+   * Parse files from XML (module/chapter level files with parsed_content)
+   */
+  private parseFiles(fileData: any): ParsedFile[] {
+    if (!fileData) return [];
+
+    const files = Array.isArray(fileData) ? fileData : [fileData];
+
+    return files
+      .filter(f => f)
+      .map((f, index) => ({
+        id: f.id || `file-${index + 1}`,
+        name: f.name || `File ${index + 1}`,
+        path: f.path || '',
+        type: f.type || 'unknown',
+        parsed: f.parsed === 'true' || f.parsed === true,
+        parsed_content: f.parsed_content || '',
       }));
   }
 

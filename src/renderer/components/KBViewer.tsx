@@ -25,6 +25,16 @@ interface Highlight {
   created_at: string;
 }
 
+// Parsed file interface for module/chapter/section files
+interface ParsedFile {
+  id: string;
+  name: string;
+  path: string;
+  type: string;
+  parsed?: boolean;
+  parsed_content?: string;
+}
+
 interface SectionContent {
   text?: string;
   markdown?: string;
@@ -45,6 +55,7 @@ interface Chapter {
   title: string;
   description?: string;
   order: number;
+  files?: ParsedFile[];
   sections: Section[];
 }
 
@@ -53,6 +64,7 @@ interface Module {
   title: string;
   description?: string;
   order: number;
+  files?: ParsedFile[];
   chapters: Chapter[];
 }
 
@@ -567,6 +579,27 @@ function KBViewer({ kbId, kbTitle, onBack }: KBViewerProps) {
                     ) : (
                       <p className="kb-no-description">No description available for this module.</p>
                     )}
+
+                    {/* Display parsed file content for module */}
+                    {selection.module.files && selection.module.files.length > 0 && (
+                      <div className="kb-file-content">
+                        <h3>Module Materials</h3>
+                        {selection.module.files.map(file => (
+                          <div key={file.id} className="kb-file-item">
+                            <div className="kb-file-header">
+                              <span className="kb-file-icon">[{file.type.toUpperCase()}]</span>
+                              <span className="kb-file-name">{file.name}</span>
+                            </div>
+                            {file.parsed_content && (
+                              <div className="kb-file-parsed-content">
+                                <pre className="kb-content-text section-text-content">{file.parsed_content}</pre>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     <div className="kb-content-overview">
                       <h3>Contents</h3>
                       <p>This module contains <strong>{selection.module.chapters.length}</strong> chapters:</p>
@@ -608,6 +641,27 @@ function KBViewer({ kbId, kbTitle, onBack }: KBViewerProps) {
                     ) : (
                       <p className="kb-no-description">No description available for this chapter.</p>
                     )}
+
+                    {/* Display parsed file content for chapter */}
+                    {selection.chapter.files && selection.chapter.files.length > 0 && (
+                      <div className="kb-file-content">
+                        <h3>Chapter Materials</h3>
+                        {selection.chapter.files.map(file => (
+                          <div key={file.id} className="kb-file-item">
+                            <div className="kb-file-header">
+                              <span className="kb-file-icon">[{file.type.toUpperCase()}]</span>
+                              <span className="kb-file-name">{file.name}</span>
+                            </div>
+                            {file.parsed_content && (
+                              <div className="kb-file-parsed-content">
+                                <pre className="kb-content-text section-text-content">{file.parsed_content}</pre>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     <div className="kb-content-overview">
                       <h3>Sections</h3>
                       <p>This chapter contains <strong>{selection.chapter.sections.length}</strong> sections:</p>

@@ -3672,6 +3672,68 @@ body {
   font-size: 0.85rem;
 }
 
+/* Module/Chapter File Content */
+.kb-file-content {
+  margin-top: 30px;
+  margin-bottom: 30px;
+}
+
+.kb-file-content h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.kb-file-item {
+  margin-bottom: 25px;
+  padding: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+}
+
+.kb-file-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.kb-file-icon {
+  color: var(--accent);
+  font-family: monospace;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.kb-file-name {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.kb-file-parsed-content {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.kb-file-parsed-content pre {
+  margin: 0;
+  padding: 15px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
 /* Highlights Summary */
 .kb-section-highlights {
   margin-top: 40px;

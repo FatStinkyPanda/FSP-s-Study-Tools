@@ -72,11 +72,22 @@ export interface KnowledgeBaseMetadata {
   author: string;
 }
 
+// Parsed file reference with optional parsed content
+export interface ParsedFile {
+  id: string;
+  name: string;
+  path: string;
+  type: string;
+  parsed?: boolean;
+  parsed_content?: string;
+}
+
 export interface Module {
   id: string;
   title: string;
   description?: string;
   order?: number;
+  files?: ParsedFile[];
   chapters: Chapter[];
 }
 
@@ -85,6 +96,7 @@ export interface Chapter {
   title: string;
   description?: string;
   order?: number;
+  files?: ParsedFile[];
   sections: Section[];
 }
 
