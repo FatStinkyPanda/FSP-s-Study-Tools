@@ -19,7 +19,7 @@ interface PDFTextItem {
 }
 
 /**
- * Image item detected in PDF
+ * Image item detected and extracted from PDF
  */
 interface PDFImageItem {
   x: number;
@@ -27,6 +27,9 @@ interface PDFImageItem {
   width: number;
   height: number;
   page: number;
+  data?: string;        // Base64 encoded image data
+  mimeType?: string;    // Image MIME type (e.g., 'image/png', 'image/jpeg')
+  name?: string;        // Image resource name from PDF
 }
 
 /**
@@ -145,28 +148,13 @@ export class PDFParser implements IParser {
           }
         }
 
-        // Get operator list for image detection
+        // Extract images from page
         try {
-          const operatorList = await page.getOperatorList();
-          const ops = pdfjs.OPS;
-
-          for (let i = 0; i < operatorList.fnArray.length; i++) {
-            const fn = operatorList.fnArray[i];
-            if (fn === ops.paintImageXObject || fn === ops.paintInlineImageXObject) {
-              // Found an image - we can't easily get position from operator list
-              // but we know there are images
-              imageItems.push({
-                x: 0,
-                y: 0,
-                width: 100,
-                height: 100,
-                page: pageNum,
-              });
-            }
-          }
-        } catch (opError) {
-          // Operator list extraction failed, continue without images
-          console.warn('Could not extract image info:', opError);
+          const extractedImages = await this.extractPageImages(page, pageNum, pdfjs);
+          imageItems.push(...extractedImages);
+        } catch (imgError) {
+          // Image extraction failed, continue without images
+          console.warn(`Could not extract images from page ${pageNum}:`, imgError);
         }
       }
 
@@ -209,6 +197,279 @@ export class PDFParser implements IParser {
     } catch (error) {
       throw new Error(`Failed to parse PDF: ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * Extract images from a PDF page as base64 data
+   */
+  private async extractPageImages(page: any, pageNum: number, pdfjs: any): Promise<PDFImageItem[]> {
+    const images: PDFImageItem[] = [];
+
+    try {
+      // Get operator list to find image operations
+      const operatorList = await page.getOperatorList();
+      const ops = pdfjs.OPS;
+
+      // Track image names we've seen to avoid duplicates
+      const processedImages = new Set<string>();
+
+      for (let i = 0; i < operatorList.fnArray.length; i++) {
+        const fn = operatorList.fnArray[i];
+        const args = operatorList.argsArray[i];
+
+        if (fn === ops.paintImageXObject) {
+          const imageName = args[0];
+
+          // Skip if we've already processed this image
+          if (processedImages.has(imageName)) {
+            continue;
+          }
+          processedImages.add(imageName);
+
+          try {
+            // Get the image object from the page's object dictionary
+            const imgObj = await page.objs.get(imageName);
+
+            if (imgObj && imgObj.data) {
+              // Extract image data and convert to base64
+              const imageData = await this.convertImageToBase64(imgObj);
+
+              if (imageData) {
+                images.push({
+                  x: 0,  // Position info not easily available from operator list
+                  y: 0,
+                  width: imgObj.width || 100,
+                  height: imgObj.height || 100,
+                  page: pageNum,
+                  data: imageData.data,
+                  mimeType: imageData.mimeType,
+                  name: imageName,
+                });
+              }
+            }
+          } catch (imgObjError) {
+            // Individual image extraction failed, continue with others
+            console.warn(`Could not extract image ${imageName}:`, imgObjError);
+          }
+        } else if (fn === ops.paintInlineImageXObject) {
+          // Inline images have data directly in args
+          try {
+            const imgData = args[0];
+            if (imgData && imgData.data) {
+              const imageData = await this.convertImageToBase64(imgData);
+
+              if (imageData) {
+                images.push({
+                  x: 0,
+                  y: 0,
+                  width: imgData.width || 100,
+                  height: imgData.height || 100,
+                  page: pageNum,
+                  data: imageData.data,
+                  mimeType: imageData.mimeType,
+                  name: `inline-${pageNum}-${i}`,
+                });
+              }
+            }
+          } catch (inlineError) {
+            console.warn('Could not extract inline image:', inlineError);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`Failed to extract images from page ${pageNum}:`, error);
+    }
+
+    return images;
+  }
+
+  /**
+   * Convert PDF image object to base64 data URL
+   */
+  private async convertImageToBase64(imgObj: any): Promise<{ data: string; mimeType: string } | null> {
+    try {
+      const { data, width, height } = imgObj;
+
+      if (!data || !width || !height) {
+        return null;
+      }
+
+      // Determine the image type and create appropriate base64 data
+      // PDF images can be in various formats - we need to reconstruct them
+
+      // Check if it's already a known image format
+      if (imgObj.kind === 'RGBA') {
+        // RGBA data - convert to PNG using canvas-like approach
+        return this.rgbaToDataUrl(data, width, height);
+      } else if (imgObj.kind === 'RGB') {
+        // RGB data - convert to PNG
+        return this.rgbToDataUrl(data, width, height);
+      } else if (imgObj.kind === 'GRAYSCALE') {
+        // Grayscale data
+        return this.grayscaleToDataUrl(data, width, height);
+      } else {
+        // Try to handle as raw image data
+        // For complex cases, create a simple representation
+        return this.rawToDataUrl(data, width, height);
+      }
+    } catch (error) {
+      console.warn('Image conversion error:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Convert RGBA pixel data to a base64 PNG data URL
+   * Uses a simple BMP-like approach that works in Node.js without canvas
+   */
+  private rgbaToDataUrl(data: Uint8ClampedArray | Uint8Array, width: number, height: number): { data: string; mimeType: string } | null {
+    try {
+      // Convert to Uint8Array if needed
+      const pixelData = data instanceof Uint8Array ? data : new Uint8Array(data);
+      // Create a simple uncompressed BMP
+      const bmpData = this.createBMP(pixelData, width, height, 4);
+      const base64 = Buffer.from(bmpData).toString('base64');
+      return {
+        data: `data:image/bmp;base64,${base64}`,
+        mimeType: 'image/bmp',
+      };
+    } catch (error) {
+      console.warn('RGBA to BMP conversion failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Convert RGB pixel data to base64
+   */
+  private rgbToDataUrl(data: Uint8ClampedArray | Uint8Array, width: number, height: number): { data: string; mimeType: string } | null {
+    try {
+      // Convert RGB to RGBA by adding alpha channel
+      const rgbaData = new Uint8Array(width * height * 4);
+      for (let i = 0, j = 0; i < data.length; i += 3, j += 4) {
+        rgbaData[j] = data[i];       // R
+        rgbaData[j + 1] = data[i + 1]; // G
+        rgbaData[j + 2] = data[i + 2]; // B
+        rgbaData[j + 3] = 255;        // A
+      }
+
+      const bmpData = this.createBMP(rgbaData, width, height, 4);
+      const base64 = Buffer.from(bmpData).toString('base64');
+      return {
+        data: `data:image/bmp;base64,${base64}`,
+        mimeType: 'image/bmp',
+      };
+    } catch (error) {
+      console.warn('RGB to BMP conversion failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Convert grayscale pixel data to base64
+   */
+  private grayscaleToDataUrl(data: Uint8ClampedArray | Uint8Array, width: number, height: number): { data: string; mimeType: string } | null {
+    try {
+      // Convert grayscale to RGBA
+      const rgbaData = new Uint8Array(width * height * 4);
+      for (let i = 0, j = 0; i < data.length; i++, j += 4) {
+        const gray = data[i];
+        rgbaData[j] = gray;     // R
+        rgbaData[j + 1] = gray; // G
+        rgbaData[j + 2] = gray; // B
+        rgbaData[j + 3] = 255;  // A
+      }
+
+      const bmpData = this.createBMP(rgbaData, width, height, 4);
+      const base64 = Buffer.from(bmpData).toString('base64');
+      return {
+        data: `data:image/bmp;base64,${base64}`,
+        mimeType: 'image/bmp',
+      };
+    } catch (error) {
+      console.warn('Grayscale to BMP conversion failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Handle raw/unknown image data formats
+   */
+  private rawToDataUrl(data: Uint8ClampedArray | Uint8Array, width: number, height: number): { data: string; mimeType: string } | null {
+    try {
+      // Try to determine format based on data size
+      const expectedRGBA = width * height * 4;
+      const expectedRGB = width * height * 3;
+      const expectedGray = width * height;
+
+      if (data.length === expectedRGBA) {
+        return this.rgbaToDataUrl(data, width, height);
+      } else if (data.length === expectedRGB) {
+        return this.rgbToDataUrl(data, width, height);
+      } else if (data.length === expectedGray) {
+        return this.grayscaleToDataUrl(data, width, height);
+      }
+
+      // Unknown format - skip
+      console.warn(`Unknown image data format: expected ${expectedRGBA}, ${expectedRGB}, or ${expectedGray} bytes, got ${data.length}`);
+      return null;
+    } catch (error) {
+      console.warn('Raw image conversion failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Create a BMP file from RGBA pixel data
+   * BMP format is simple and doesn't require external libraries
+   */
+  private createBMP(pixelData: Uint8Array, width: number, height: number, channels: number): Uint8Array {
+    // BMP file header (14 bytes) + DIB header (40 bytes) + pixel data
+    const rowSize = Math.ceil((width * 24) / 32) * 4; // 24-bit BMP with padding
+    const pixelArraySize = rowSize * height;
+    const fileSize = 54 + pixelArraySize;
+
+    const bmp = new Uint8Array(fileSize);
+    const view = new DataView(bmp.buffer);
+
+    // BMP File Header (14 bytes)
+    bmp[0] = 0x42; // 'B'
+    bmp[1] = 0x4D; // 'M'
+    view.setUint32(2, fileSize, true);      // File size
+    view.setUint32(6, 0, true);             // Reserved
+    view.setUint32(10, 54, true);           // Pixel data offset
+
+    // DIB Header (BITMAPINFOHEADER - 40 bytes)
+    view.setUint32(14, 40, true);           // DIB header size
+    view.setInt32(18, width, true);         // Width
+    view.setInt32(22, -height, true);       // Height (negative for top-down)
+    view.setUint16(26, 1, true);            // Color planes
+    view.setUint16(28, 24, true);           // Bits per pixel (24-bit)
+    view.setUint32(30, 0, true);            // Compression (none)
+    view.setUint32(34, pixelArraySize, true); // Image size
+    view.setInt32(38, 2835, true);          // Horizontal resolution (72 DPI)
+    view.setInt32(42, 2835, true);          // Vertical resolution (72 DPI)
+    view.setUint32(46, 0, true);            // Colors in palette
+    view.setUint32(50, 0, true);            // Important colors
+
+    // Pixel data (BGR format, bottom-up by default but we use negative height for top-down)
+    let offset = 54;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const srcIdx = (y * width + x) * channels;
+        // BMP uses BGR order
+        bmp[offset++] = pixelData[srcIdx + 2]; // B
+        bmp[offset++] = pixelData[srcIdx + 1]; // G
+        bmp[offset++] = pixelData[srcIdx];     // R
+      }
+      // Add padding to make row size multiple of 4
+      const padding = rowSize - (width * 3);
+      for (let p = 0; p < padding; p++) {
+        bmp[offset++] = 0;
+      }
+    }
+
+    return bmp;
   }
 
   /**
@@ -455,27 +716,62 @@ export class PDFParser implements IParser {
       return elements;
     }
 
-    // Convert images to content elements with position info
-    const imageElements: ParsedContentElement[] = imageItems.map((img, index) => ({
+    // Filter to only include images that were successfully extracted
+    const extractedImages = imageItems.filter(img => img.data);
+
+    if (extractedImages.length === 0) {
+      // No images were successfully extracted
+      const pagesWithImages = new Set(imageItems.map(img => img.page));
+      if (pagesWithImages.size > 0) {
+        const imageNote: ParsedContentElement = {
+          type: 'paragraph',
+          content: `[This document contains ${imageItems.length} image(s) that could not be extracted.]`,
+        };
+        return [...elements, imageNote];
+      }
+      return elements;
+    }
+
+    // Convert images to content elements with actual base64 data
+    const imageElements: ParsedContentElement[] = extractedImages.map((img, index) => ({
       type: 'image' as const,
-      alt: `Figure ${index + 1}`,
+      src: img.data,  // Base64 data URL
+      alt: `Figure ${index + 1} (Page ${img.page})`,
       position: { page: img.page, x: img.x, y: img.y },
     }));
 
-    // For now, append images at the end grouped by page
-    const pagesWithImages = new Set(imageItems.map(img => img.page));
+    // Group images by page for better organization
+    const imagesByPage = new Map<number, ParsedContentElement[]>();
+    imageElements.forEach(img => {
+      const page = img.position?.page || 1;
+      if (!imagesByPage.has(page)) {
+        imagesByPage.set(page, []);
+      }
+      imagesByPage.get(page)!.push(img);
+    });
 
-    if (pagesWithImages.size > 0) {
-      // Add a note about images
-      const imageNote: ParsedContentElement = {
-        type: 'paragraph',
-        content: `[This document contains ${imageItems.length} image(s) across ${pagesWithImages.size} page(s).]`,
-      };
+    // Insert images after text content, organized by page
+    const result: ParsedContentElement[] = [...elements];
 
-      return [...elements, imageNote, ...imageElements];
+    // Add images section
+    if (extractedImages.length > 0) {
+      result.push({
+        type: 'heading' as const,
+        content: 'Figures',
+        level: 3,
+      });
+
+      // Add images sorted by page
+      const sortedPages = Array.from(imagesByPage.keys()).sort((a, b) => a - b);
+      for (const page of sortedPages) {
+        const pageImages = imagesByPage.get(page)!;
+        pageImages.forEach(img => {
+          result.push(img);
+        });
+      }
     }
 
-    return elements;
+    return result;
   }
 
   /**

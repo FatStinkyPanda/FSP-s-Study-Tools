@@ -34,6 +34,7 @@ module.exports = {
     {
       name: '@electron-forge/plugin-webpack',
       config: {
+        loggerPort: 9001, // Avoid conflict with SonarQube on port 9000
         mainConfig: './webpack.main.config.js',
         renderer: {
           config: './webpack.renderer.config.js',
