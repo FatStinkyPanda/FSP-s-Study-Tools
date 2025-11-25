@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './App.css';
 import StudySession from './StudySession';
 import KBEditor from './components/KBEditor';
@@ -6,6 +6,9 @@ import Dashboard from './components/Dashboard';
 import SearchResults from './components/SearchResults';
 import UpdateNotification from './components/UpdateNotification';
 import KBViewer from './components/KBViewer';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { ErrorNotificationContainer, useErrorNotifications } from './components/ErrorNotification';
+import { toUserFriendlyError, errorToNotification, logError } from '../shared/errors';
 
 interface ElectronAPI {
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
@@ -260,6 +263,39 @@ function App() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ kb: KnowledgeBase; confirmText: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Error notification system
+  const { notifications, addNotification, dismissNotification } = useErrorNotifications();
+
+  // Helper to show user-friendly errors
+  const showError = useCallback((error: unknown, context?: string) => {
+    const appError = toUserFriendlyError(error, context);
+    logError(appError, context);
+    addNotification(errorToNotification(appError));
+  }, [addNotification]);
+
+  // Handle notification actions
+  const handleNotificationAction = useCallback((action: string, notificationId: string) => {
+    switch (action) {
+      case 'retry':
+        // Dismiss and let the caller retry
+        dismissNotification(notificationId);
+        break;
+      case 'open-settings':
+        setCurrentView('settings');
+        dismissNotification(notificationId);
+        break;
+      case 'restart':
+        window.location.reload();
+        break;
+      case 'offline':
+        // Dismiss notification for offline mode
+        dismissNotification(notificationId);
+        break;
+      default:
+        console.log('Unhandled notification action:', action);
+    }
+  }, [dismissNotification]);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -310,8 +346,7 @@ function App() {
       setSettingsSaved(true);
       setTimeout(() => setSettingsSaved(false), 3000);
     } catch (error) {
-      console.error('Failed to save settings:', error);
-      alert(`Failed to save settings: ${(error as Error).message}`);
+      showError(error, 'Failed to save settings');
     }
   };
 
@@ -414,15 +449,24 @@ function App() {
       const result = await window.electronAPI.invoke('kb:importFile') as { success: boolean; kbId?: number; error?: string };
 
       if (result.success && result.kbId) {
-        alert(`Knowledge base imported successfully! ID: ${result.kbId}`);
+        // Show success notification
+        addNotification({
+          id: `import-success-${Date.now()}`,
+          code: 0,
+          severity: 'info',
+          title: 'Import Successful',
+          message: `Knowledge base imported successfully!`,
+          timestamp: new Date(),
+          autoDismiss: true,
+          dismissAfter: 3000,
+        });
         // Reload data
         await loadData();
       } else if (result.error) {
-        alert(`Failed to import: ${result.error}`);
+        showError(new Error(result.error), 'Knowledge Base Import');
       }
     } catch (error) {
-      console.error('Failed to import knowledge base:', error);
-      alert(`Failed to import: ${(error as Error).message}`);
+      showError(error, 'Knowledge Base Import');
     }
   };
 
@@ -438,8 +482,7 @@ function App() {
       await loadData();
       setDeleteConfirm(null);
     } catch (error) {
-      console.error('Failed to delete knowledge base:', error);
-      alert(`Failed to delete: ${(error as Error).message}`);
+      showError(error, 'Failed to delete knowledge base');
     } finally {
       setIsDeleting(false);
     }
@@ -455,9 +498,18 @@ function App() {
   }
 
   return (
-    <div className="app">
-      {/* Header */}
-      <header className="app-header">
+    <ErrorBoundary>
+      <div className="app">
+        {/* Error Notification Container */}
+        <ErrorNotificationContainer
+          notifications={notifications}
+          onDismiss={dismissNotification}
+          onAction={handleNotificationAction}
+          position="top-right"
+        />
+
+        {/* Header */}
+        <header className="app-header">
         <div className="header-content">
           <h1>FSP's Study Tools</h1>
           <div className="header-actions">
@@ -707,8 +759,7 @@ function App() {
                   // Return to home view
                   setCurrentView('home');
                 } catch (error) {
-                  console.error('Failed to save KB:', error);
-                  alert(`Failed to save: ${(error as Error).message}`);
+                  showError(error, 'Failed to save knowledge base');
                 }
               }}
               onCancel={() => setCurrentView('home')}
@@ -1158,9 +1209,10 @@ function App() {
         </div>
       )}
 
-      {/* Update Notification */}
-      <UpdateNotification />
-    </div>
+        {/* Update Notification */}
+        <UpdateNotification />
+      </div>
+    </ErrorBoundary>
   );
 }
 
