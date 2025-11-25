@@ -15,13 +15,25 @@ import {
   LocalModelConfig,
 } from '../../shared/ai-types';
 
+// Fallback configuration for a provider
+interface ProviderFallbackConfig {
+  primary: string;
+  secondary?: string;
+  tertiary?: string;
+}
+
 export class AIManager {
   private providers: Map<AIProviderType, BaseAIProvider> = new Map();
   private localProvider: LocalAIProvider | null = null;
   private defaultProvider: AIProviderType = 'openai';
+  private defaultProviderSecondary?: AIProviderType;
+  private defaultProviderTertiary?: AIProviderType;
   private defaultModel: string = 'gpt-4-turbo-preview';
   private defaultTemperature: number = 0.7;
   private defaultMaxTokens: number = 2048;
+
+  // Fallback models per provider
+  private fallbackModels: Map<AIProviderType, ProviderFallbackConfig> = new Map();
 
   constructor(configuration?: AIConfiguration) {
     // Initialize local provider by default
@@ -111,7 +123,85 @@ export class AIManager {
   }
 
   /**
-   * Create a completion
+   * Check if an error is retryable (overloaded, rate limited, capacity issues)
+   */
+  private isRetryableError(error: unknown): boolean {
+    const errorMessage = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    const retryablePatterns = [
+      'overloaded',
+      'rate limit',
+      'rate_limit',
+      'too many requests',
+      '429',
+      '503',
+      'capacity',
+      'temporarily unavailable',
+      'server error',
+      'service unavailable',
+      'timeout',
+      'econnreset',
+      'fetch failed',
+    ];
+    return retryablePatterns.some(pattern => errorMessage.includes(pattern));
+  }
+
+  /**
+   * Get fallback models for a provider in order of priority
+   */
+  private getFallbackModels(providerType: AIProviderType, currentModel: string): string[] {
+    const fallbacks: string[] = [];
+    const config = this.fallbackModels.get(providerType);
+
+    if (config) {
+      // Add secondary and tertiary models from the same provider
+      if (config.secondary && config.secondary !== currentModel) {
+        fallbacks.push(config.secondary);
+      }
+      if (config.tertiary && config.tertiary !== currentModel) {
+        fallbacks.push(config.tertiary);
+      }
+    }
+
+    return fallbacks;
+  }
+
+  /**
+   * Get fallback providers in order of priority
+   */
+  private getFallbackProviders(currentProvider: AIProviderType): AIProviderType[] {
+    const fallbacks: AIProviderType[] = [];
+
+    if (this.defaultProviderSecondary && this.defaultProviderSecondary !== currentProvider && this.providers.has(this.defaultProviderSecondary)) {
+      fallbacks.push(this.defaultProviderSecondary);
+    }
+    if (this.defaultProviderTertiary && this.defaultProviderTertiary !== currentProvider && this.providers.has(this.defaultProviderTertiary)) {
+      fallbacks.push(this.defaultProviderTertiary);
+    }
+
+    return fallbacks;
+  }
+
+  /**
+   * Get the default model for a provider
+   */
+  private getDefaultModelForProvider(providerType: AIProviderType): string {
+    const config = this.fallbackModels.get(providerType);
+    if (config?.primary) {
+      return config.primary;
+    }
+
+    // Fallback defaults
+    switch (providerType) {
+      case 'openai': return 'gpt-4-turbo-preview';
+      case 'anthropic': return 'claude-3-5-sonnet-20241022';
+      case 'google': return 'gemini-1.5-pro';
+      case 'openrouter': return 'anthropic/claude-3.5-sonnet';
+      default: return this.defaultModel;
+    }
+  }
+
+  /**
+   * Create a completion with automatic fallback support
    */
   async createCompletion(request: Partial<AICompletionRequest>): Promise<AICompletionResponse> {
     const fullRequest: AICompletionRequest = {
@@ -128,26 +218,78 @@ export class AIManager {
     };
 
     const providerType = this.determineProvider(fullRequest.model);
-    const provider = this.getProvider(providerType);
+    const attempts: Array<{ provider: AIProviderType; model: string; error?: Error }> = [];
 
-    try {
-      return await provider.createCompletion(fullRequest);
-    } catch (error) {
-      if (error instanceof AIProviderError) {
-        throw error;
-      }
+    // Build fallback chain: current model -> fallback models in same provider -> fallback providers
+    const fallbackChain: Array<{ provider: AIProviderType; model: string }> = [
+      { provider: providerType, model: fullRequest.model }
+    ];
 
-      throw new AIProviderError(
-        `Completion failed: ${(error as Error).message}`,
-        providerType,
-        undefined,
-        error as Error
-      );
+    // Add fallback models for current provider
+    const fallbackModels = this.getFallbackModels(providerType, fullRequest.model);
+    for (const model of fallbackModels) {
+      fallbackChain.push({ provider: providerType, model });
     }
+
+    // Add fallback providers with their primary models
+    const fallbackProviders = this.getFallbackProviders(providerType);
+    for (const fallbackProvider of fallbackProviders) {
+      const primaryModel = this.getDefaultModelForProvider(fallbackProvider);
+      fallbackChain.push({ provider: fallbackProvider, model: primaryModel });
+
+      // Also add fallback models for the fallback provider
+      const providerFallbackModels = this.getFallbackModels(fallbackProvider, primaryModel);
+      for (const model of providerFallbackModels) {
+        fallbackChain.push({ provider: fallbackProvider, model });
+      }
+    }
+
+    // Try each option in the fallback chain
+    let lastError: Error | undefined;
+    for (const option of fallbackChain) {
+      try {
+        const provider = this.providers.get(option.provider);
+        if (!provider) {
+          continue;
+        }
+
+        const requestWithModel = { ...fullRequest, model: option.model };
+        const result = await provider.createCompletion(requestWithModel);
+
+        // Log if we used a fallback
+        if (attempts.length > 0) {
+          console.log(`[AIManager] Successfully used fallback: ${option.provider}/${option.model} after ${attempts.length} failed attempt(s)`);
+        }
+
+        return result;
+      } catch (error) {
+        lastError = error as Error;
+        attempts.push({ provider: option.provider, model: option.model, error: lastError });
+
+        // Only continue to fallback if error is retryable
+        if (!this.isRetryableError(error)) {
+          break;
+        }
+
+        console.log(`[AIManager] Retryable error with ${option.provider}/${option.model}: ${lastError.message}. Trying fallback...`);
+      }
+    }
+
+    // All fallbacks failed
+    if (lastError instanceof AIProviderError) {
+      throw lastError;
+    }
+
+    throw new AIProviderError(
+      `Completion failed after ${attempts.length} attempt(s): ${lastError?.message || 'Unknown error'}`,
+      providerType,
+      undefined,
+      lastError
+    );
   }
 
   /**
-   * Create a streaming completion
+   * Create a streaming completion with automatic fallback support
    */
   async *createStreamingCompletion(
     request: Partial<AICompletionRequest>
@@ -166,22 +308,74 @@ export class AIManager {
     };
 
     const providerType = this.determineProvider(fullRequest.model);
-    const provider = this.getProvider(providerType);
+    const attempts: Array<{ provider: AIProviderType; model: string; error?: Error }> = [];
 
-    try {
-      yield* provider.createStreamingCompletion(fullRequest);
-    } catch (error) {
-      if (error instanceof AIProviderError) {
-        throw error;
-      }
+    // Build fallback chain: current model -> fallback models in same provider -> fallback providers
+    const fallbackChain: Array<{ provider: AIProviderType; model: string }> = [
+      { provider: providerType, model: fullRequest.model }
+    ];
 
-      throw new AIProviderError(
-        `Streaming completion failed: ${(error as Error).message}`,
-        providerType,
-        undefined,
-        error as Error
-      );
+    // Add fallback models for current provider
+    const fallbackModels = this.getFallbackModels(providerType, fullRequest.model);
+    for (const model of fallbackModels) {
+      fallbackChain.push({ provider: providerType, model });
     }
+
+    // Add fallback providers with their primary models
+    const fallbackProviders = this.getFallbackProviders(providerType);
+    for (const fallbackProvider of fallbackProviders) {
+      const primaryModel = this.getDefaultModelForProvider(fallbackProvider);
+      fallbackChain.push({ provider: fallbackProvider, model: primaryModel });
+
+      // Also add fallback models for the fallback provider
+      const providerFallbackModels = this.getFallbackModels(fallbackProvider, primaryModel);
+      for (const model of providerFallbackModels) {
+        fallbackChain.push({ provider: fallbackProvider, model });
+      }
+    }
+
+    // Try each option in the fallback chain
+    let lastError: Error | undefined;
+    for (const option of fallbackChain) {
+      try {
+        const provider = this.providers.get(option.provider);
+        if (!provider) {
+          continue;
+        }
+
+        const requestWithModel = { ...fullRequest, model: option.model };
+
+        // Log if we're using a fallback
+        if (attempts.length > 0) {
+          console.log(`[AIManager] Trying fallback: ${option.provider}/${option.model} after ${attempts.length} failed attempt(s)`);
+        }
+
+        yield* provider.createStreamingCompletion(requestWithModel);
+        return; // Success - exit the generator
+      } catch (error) {
+        lastError = error as Error;
+        attempts.push({ provider: option.provider, model: option.model, error: lastError });
+
+        // Only continue to fallback if error is retryable
+        if (!this.isRetryableError(error)) {
+          break;
+        }
+
+        console.log(`[AIManager] Retryable error with ${option.provider}/${option.model}: ${lastError.message}. Trying fallback...`);
+      }
+    }
+
+    // All fallbacks failed
+    if (lastError instanceof AIProviderError) {
+      throw lastError;
+    }
+
+    throw new AIProviderError(
+      `Streaming completion failed after ${attempts.length} attempt(s): ${lastError?.message || 'Unknown error'}`,
+      providerType,
+      undefined,
+      lastError
+    );
   }
 
   /**

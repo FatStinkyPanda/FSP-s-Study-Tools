@@ -33,6 +33,8 @@ export class XMLParser {
    */
   async parseKnowledgeBase(xmlContent: string): Promise<ParsedKnowledgeBase> {
     try {
+      console.log('[XMLParser] Parsing XML content, length:', xmlContent?.length || 0);
+
       const parsed = await parseStringPromise(xmlContent, {
         explicitArray: false,
         mergeAttrs: true,
@@ -40,17 +42,27 @@ export class XMLParser {
         normalize: true,
       });
 
+      console.log('[XMLParser] Parsed result keys:', Object.keys(parsed || {}));
+
       if (!parsed.knowledge_base) {
         throw new Error('Invalid knowledge base XML: missing root element');
       }
 
       const kb = parsed.knowledge_base;
+      console.log('[XMLParser] KB keys:', Object.keys(kb || {}));
+      console.log('[XMLParser] kb.modules:', kb.modules);
+      console.log('[XMLParser] kb.modules type:', typeof kb.modules);
+      console.log('[XMLParser] kb.modules?.module:', kb.modules?.module);
+      console.log('[XMLParser] kb.modules?.module type:', typeof kb.modules?.module);
 
       // Extract metadata
       const metadata = this.extractMetadata(kb);
 
       // Parse modules
-      const modules = this.parseModules(kb.modules?.module || []);
+      const moduleData = kb.modules?.module || [];
+      console.log('[XMLParser] moduleData:', moduleData);
+      console.log('[XMLParser] moduleData is array:', Array.isArray(moduleData));
+      const modules = this.parseModules(moduleData);
 
       // Calculate statistics
       const stats = this.calculateStatistics(modules);
@@ -90,17 +102,32 @@ export class XMLParser {
    * Parse modules from XML
    */
   private parseModules(moduleData: any): Module[] {
-    const modules = Array.isArray(moduleData) ? moduleData : [moduleData];
+    console.log('[XMLParser.parseModules] Input moduleData:', moduleData);
+    console.log('[XMLParser.parseModules] Is array:', Array.isArray(moduleData));
 
-    return modules
+    const modules = Array.isArray(moduleData) ? moduleData : [moduleData];
+    console.log('[XMLParser.parseModules] After array conversion:', modules);
+    console.log('[XMLParser.parseModules] modules length:', modules.length);
+
+    const result = modules
       .filter(m => m) // Filter out undefined/null
-      .map((m, index) => ({
-        id: m.id || `module-${index + 1}`,
-        title: m.title || `Module ${index + 1}`,
-        description: m.description,
-        order: parseInt(m.order || String(index + 1), 10),
-        chapters: this.parseChapters(m.chapters?.chapter || []),
-      }));
+      .map((m, index) => {
+        console.log(`[XMLParser.parseModules] Processing module ${index}:`, m);
+        console.log(`[XMLParser.parseModules] Module ${index} keys:`, Object.keys(m || {}));
+        console.log(`[XMLParser.parseModules] Module ${index} chapters:`, m?.chapters);
+        console.log(`[XMLParser.parseModules] Module ${index} chapters?.chapter:`, m?.chapters?.chapter);
+
+        return {
+          id: m.id || `module-${index + 1}`,
+          title: m.title || `Module ${index + 1}`,
+          description: m.description,
+          order: parseInt(m.order || String(index + 1), 10),
+          chapters: this.parseChapters(m.chapters?.chapter || []),
+        };
+      });
+
+    console.log('[XMLParser.parseModules] Final result count:', result.length);
+    return result;
   }
 
   /**

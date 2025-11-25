@@ -93,6 +93,35 @@ function StudySession({ onExit, initialKbId, initialSectionId, onNavigateToSetti
     checkAIConfiguration();
   }, []);
 
+  // Save progress when session completes
+  useEffect(() => {
+    const saveSessionProgress = async () => {
+      if (
+        selectedKB &&
+        questions.length > 0 &&
+        answeredQuestions === questions.length &&
+        sessionStartTime > 0
+      ) {
+        try {
+          const duration = Math.round((Date.now() - sessionStartTime) / 1000);
+          const userScore = score / questions.length;
+          const sectionId = targetSectionId || `session_${Date.now()}`;
+
+          await window.electronAPI.invoke('progress:recordSession', {
+            kbId: selectedKB,
+            sectionId,
+            duration,
+            userScore,
+          });
+        } catch (err) {
+          console.error('Failed to save session progress:', err);
+        }
+      }
+    };
+
+    saveSessionProgress();
+  }, [answeredQuestions, questions.length, selectedKB, sessionStartTime, score, targetSectionId]);
+
   const checkAIConfiguration = async () => {
     try {
       const settings = await window.electronAPI.invoke('settings:getAll') as {
@@ -694,6 +723,13 @@ function StudySession({ onExit, initialKbId, initialSectionId, onNavigateToSetti
             ))}
           </div>
         )}
+
+        {/* Global AI Tutor - available when no KB is selected */}
+        <ChatPanel
+          isOpen={isChatOpen}
+          onToggle={() => setIsChatOpen(!isChatOpen)}
+          isGlobalMode={true}
+        />
       </div>
     );
   }

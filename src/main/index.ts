@@ -409,6 +409,13 @@ class Application {
       return this.knowledgeBaseManager.searchContent(kbId, query, limit);
     });
 
+    ipcMain.handle('kb:searchAll', async (_event, query: string, limit?: number) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.searchAllKBs(query, limit);
+    });
+
     ipcMain.handle('kb:getStatistics', async (_event, kbId: number) => {
       if (!this.knowledgeBaseManager) {
         throw new Error('Knowledge Base Manager not initialized');
@@ -1135,6 +1142,32 @@ class Application {
       }
     });
 
+    // Debug handler to get KB XML content
+    ipcMain.handle('debug:getKBXml', async (_event, kbId: number) => {
+      if (!this.databaseManager) {
+        return { success: false, error: 'Database not initialized' };
+      }
+
+      const kbs = this.databaseManager.query<{ id: number; title: string; xml_content: string; metadata: string }>(
+        'SELECT id, title, xml_content, metadata FROM knowledge_bases WHERE id = ?',
+        [kbId]
+      );
+
+      if (kbs.length === 0) {
+        return { success: false, error: `KB not found: ${kbId}` };
+      }
+
+      const kb = kbs[0];
+      return {
+        success: true,
+        kbId: kb.id,
+        title: kb.title,
+        xmlContentLength: kb.xml_content?.length || 0,
+        xmlContentPreview: kb.xml_content?.substring(0, 3000),
+        metadata: kb.metadata,
+      };
+    });
+
     // Debug handler to list DB state
     ipcMain.handle('debug:dbState', async () => {
       if (!this.databaseManager) {
@@ -1190,16 +1223,35 @@ class Application {
         return;
       }
 
-      // List KBs with content info
+      // List KBs with content info and parse XML to verify structure
       const kbs = this.databaseManager.query<{ id: number; title: string; xml_content: string }>(
         'SELECT id, title, xml_content FROM knowledge_bases'
       );
       console.log(`[INFO] Knowledge Bases: ${kbs.length}`);
-      kbs.forEach(kb => {
+
+      for (const kb of kbs) {
         const contentLen = kb.xml_content?.length || 0;
         const hasContent = contentLen > 500 ? '[OK]' : '[EMPTY]';
         console.log(`  - [${kb.id}] ${kb.title} (${contentLen} chars) ${hasContent}`);
-      });
+
+        // Parse XML and check structure for debugging
+        if (this.knowledgeBaseManager) {
+          try {
+            const parsed = await this.knowledgeBaseManager.parseKnowledgeBase(kb.id);
+            const moduleCount = parsed.modules?.length || 0;
+            const chapterCount = parsed.totalChapters || 0;
+            const sectionCount = parsed.totalSections || 0;
+            console.log(`      -> Parsed: ${moduleCount} modules, ${chapterCount} chapters, ${sectionCount} sections`);
+            if (moduleCount === 0) {
+              // Log XML structure for debugging
+              const xmlPreview = kb.xml_content?.substring(0, 500) || '';
+              console.log(`      -> [WARN] 0 modules! XML preview: ${xmlPreview.replace(/\n/g, ' ').substring(0, 200)}...`);
+            }
+          } catch (parseErr) {
+            console.log(`      -> [ERROR] Parse failed: ${(parseErr as Error).message}`);
+          }
+        }
+      }
 
       // List practice tests
       const tests = this.databaseManager.query<{ id: number; kb_id: number; title: string; type: string }>(

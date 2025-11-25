@@ -18,6 +18,14 @@ interface ProgressStats {
   completionPercentage: number;
 }
 
+interface KBStatistics {
+  totalSections: number;
+  totalChunks: number;
+  totalCharacters: number;
+  averageChunkSize: number;
+  contentTypes: Record<string, number>;
+}
+
 interface StudyProgress {
   id: number;
   kb_id: number;
@@ -50,6 +58,7 @@ function Dashboard({ onNavigateToStudy }: DashboardProps) {
   const [needsReview, setNeedsReview] = useState<StudyProgress[]>([]);
   const [streak, setStreak] = useState<number>(0);
   const [velocity, setVelocity] = useState<number>(0);
+  const [kbStats, setKbStats] = useState<KBStatistics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,13 +92,14 @@ function Dashboard({ onNavigateToStudy }: DashboardProps) {
       setLoading(true);
       setError(null);
 
-      // Load all dashboard data in parallel
-      const [statsData, recentData, reviewData, streakData, velocityData] = await Promise.all([
+      // Load all dashboard data in parallel (including KB statistics for accurate section counts)
+      const [statsData, recentData, reviewData, streakData, velocityData, kbStatsData] = await Promise.all([
         window.electronAPI.invoke('progress:getStats', kbId) as Promise<ProgressStats>,
         window.electronAPI.invoke('progress:getRecent', kbId, 10) as Promise<StudyProgress[]>,
         window.electronAPI.invoke('progress:getNeedingReview', kbId, 0.7) as Promise<StudyProgress[]>,
         window.electronAPI.invoke('progress:getStreak', kbId) as Promise<number>,
         window.electronAPI.invoke('progress:getVelocity', kbId, 4) as Promise<number>,
+        window.electronAPI.invoke('kb:getStatistics', kbId) as Promise<KBStatistics>,
       ]);
 
       setStats(statsData);
@@ -97,6 +107,7 @@ function Dashboard({ onNavigateToStudy }: DashboardProps) {
       setNeedsReview(reviewData);
       setStreak(streakData);
       setVelocity(velocityData);
+      setKbStats(kbStatsData);
       setLoading(false);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
@@ -114,7 +125,10 @@ function Dashboard({ onNavigateToStudy }: DashboardProps) {
   };
 
   const formatDate = (dateStr: string): string => {
+    if (!dateStr) return 'Never';
     const date = new Date(dateStr);
+    // Check if date is valid
+    if (isNaN(date.getTime())) return 'Unknown';
     const now = new Date();
     const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
 
@@ -129,6 +143,11 @@ function Dashboard({ onNavigateToStudy }: DashboardProps) {
     if (score >= 0.6) return '#fbbf24';
     return '#ef4444';
   };
+
+  // Calculate actual completion percentage based on KB total sections
+  const actualCompletionPercentage = kbStats?.totalSections && kbStats.totalSections > 0
+    ? ((stats?.completedSections || 0) / kbStats.totalSections) * 100
+    : 0;
 
   if (loading && knowledgeBases.length === 0) {
     return (
@@ -198,13 +217,13 @@ function Dashboard({ onNavigateToStudy }: DashboardProps) {
                 </svg>
               </div>
               <div className="stat-content">
-                <span className="stat-value">{stats?.completionPercentage.toFixed(0) || 0}%</span>
+                <span className="stat-value">{actualCompletionPercentage.toFixed(0)}%</span>
                 <span className="stat-label">Completion</span>
               </div>
               <div className="stat-progress">
                 <div
                   className="stat-progress-fill"
-                  style={{ width: `${stats?.completionPercentage || 0}%` }}
+                  style={{ width: `${actualCompletionPercentage}%` }}
                 ></div>
               </div>
             </div>
@@ -291,7 +310,7 @@ function Dashboard({ onNavigateToStudy }: DashboardProps) {
                 </div>
                 <div className="summary-divider"></div>
                 <div className="summary-item">
-                  <span className="summary-value">{(stats?.totalSections || 0) - (stats?.completedSections || 0)}</span>
+                  <span className="summary-value">{(kbStats?.totalSections || 0) - (stats?.completedSections || 0)}</span>
                   <span className="summary-label">Remaining</span>
                 </div>
                 <div className="summary-divider"></div>

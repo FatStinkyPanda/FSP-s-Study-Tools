@@ -7,15 +7,30 @@ export interface AppSettings {
   google_api_key?: string;
   openrouter_api_key?: string;
 
-  // Default AI Provider
+  // Default AI Provider (with fallbacks)
   default_ai_provider?: 'openai' | 'anthropic' | 'google' | 'openrouter';
+  default_ai_provider_secondary?: 'openai' | 'anthropic' | 'google' | 'openrouter';
+  default_ai_provider_tertiary?: 'openai' | 'anthropic' | 'google' | 'openrouter';
 
-  // AI Model Settings
+  // AI Model Settings (primary models)
   default_model?: string;
   openai_model?: string;
   anthropic_model?: string;
   google_model?: string;
   openrouter_model?: string;
+
+  // AI Model Settings (secondary fallback models)
+  openai_model_secondary?: string;
+  anthropic_model_secondary?: string;
+  google_model_secondary?: string;
+  openrouter_model_secondary?: string;
+
+  // AI Model Settings (tertiary fallback models)
+  openai_model_tertiary?: string;
+  anthropic_model_tertiary?: string;
+  google_model_tertiary?: string;
+  openrouter_model_tertiary?: string;
+
   temperature?: number;
   max_tokens?: number;
 
@@ -170,18 +185,39 @@ export class SettingsManager {
     settings.google_api_key = this.getString('google_api_key');
     settings.openrouter_api_key = this.getString('openrouter_api_key');
 
-    // Default AI Provider
+    // Default AI Provider (with fallbacks)
     const provider = this.getString('default_ai_provider');
     if (provider === 'openai' || provider === 'anthropic' || provider === 'google' || provider === 'openrouter') {
       settings.default_ai_provider = provider;
     }
+    const providerSecondary = this.getString('default_ai_provider_secondary');
+    if (providerSecondary === 'openai' || providerSecondary === 'anthropic' || providerSecondary === 'google' || providerSecondary === 'openrouter') {
+      settings.default_ai_provider_secondary = providerSecondary;
+    }
+    const providerTertiary = this.getString('default_ai_provider_tertiary');
+    if (providerTertiary === 'openai' || providerTertiary === 'anthropic' || providerTertiary === 'google' || providerTertiary === 'openrouter') {
+      settings.default_ai_provider_tertiary = providerTertiary;
+    }
 
-    // AI Model Settings
+    // AI Model Settings (primary)
     settings.default_model = this.getString('default_model');
     settings.openai_model = this.getString('openai_model');
     settings.anthropic_model = this.getString('anthropic_model');
     settings.google_model = this.getString('google_model');
     settings.openrouter_model = this.getString('openrouter_model');
+
+    // AI Model Settings (secondary fallback)
+    settings.openai_model_secondary = this.getString('openai_model_secondary');
+    settings.anthropic_model_secondary = this.getString('anthropic_model_secondary');
+    settings.google_model_secondary = this.getString('google_model_secondary');
+    settings.openrouter_model_secondary = this.getString('openrouter_model_secondary');
+
+    // AI Model Settings (tertiary fallback)
+    settings.openai_model_tertiary = this.getString('openai_model_tertiary');
+    settings.anthropic_model_tertiary = this.getString('anthropic_model_tertiary');
+    settings.google_model_tertiary = this.getString('google_model_tertiary');
+    settings.openrouter_model_tertiary = this.getString('openrouter_model_tertiary');
+
     settings.temperature = this.getNumber('temperature');
     settings.max_tokens = this.getNumber('max_tokens');
 
@@ -227,12 +263,18 @@ export class SettingsManager {
       this.set('openrouter_api_key', settings.openrouter_api_key);
     }
 
-    // Default AI Provider
+    // Default AI Provider (with fallbacks)
     if (settings.default_ai_provider !== undefined) {
       this.set('default_ai_provider', settings.default_ai_provider);
     }
+    if (settings.default_ai_provider_secondary !== undefined) {
+      this.set('default_ai_provider_secondary', settings.default_ai_provider_secondary);
+    }
+    if (settings.default_ai_provider_tertiary !== undefined) {
+      this.set('default_ai_provider_tertiary', settings.default_ai_provider_tertiary);
+    }
 
-    // AI Model Settings
+    // AI Model Settings (primary)
     if (settings.default_model !== undefined) {
       this.set('default_model', settings.default_model);
     }
@@ -248,6 +290,35 @@ export class SettingsManager {
     if (settings.openrouter_model !== undefined) {
       this.set('openrouter_model', settings.openrouter_model);
     }
+
+    // AI Model Settings (secondary fallback)
+    if (settings.openai_model_secondary !== undefined) {
+      this.set('openai_model_secondary', settings.openai_model_secondary);
+    }
+    if (settings.anthropic_model_secondary !== undefined) {
+      this.set('anthropic_model_secondary', settings.anthropic_model_secondary);
+    }
+    if (settings.google_model_secondary !== undefined) {
+      this.set('google_model_secondary', settings.google_model_secondary);
+    }
+    if (settings.openrouter_model_secondary !== undefined) {
+      this.set('openrouter_model_secondary', settings.openrouter_model_secondary);
+    }
+
+    // AI Model Settings (tertiary fallback)
+    if (settings.openai_model_tertiary !== undefined) {
+      this.set('openai_model_tertiary', settings.openai_model_tertiary);
+    }
+    if (settings.anthropic_model_tertiary !== undefined) {
+      this.set('anthropic_model_tertiary', settings.anthropic_model_tertiary);
+    }
+    if (settings.google_model_tertiary !== undefined) {
+      this.set('google_model_tertiary', settings.google_model_tertiary);
+    }
+    if (settings.openrouter_model_tertiary !== undefined) {
+      this.set('openrouter_model_tertiary', settings.openrouter_model_tertiary);
+    }
+
     if (settings.temperature !== undefined) {
       this.set('temperature', settings.temperature);
     }

@@ -525,7 +525,7 @@ function App() {
         {currentView === 'home' && (
           <div className="view home-view">
             <h2>Welcome to FSP's Study Tools</h2>
-            <p className="subtitle">AI-Powered Aviation Training Platform</p>
+            <p className="subtitle">AI-Powered Learning Platform</p>
 
             <div className="features-grid">
               <div className="feature-card">
@@ -661,11 +661,17 @@ function App() {
             <KBEditor
               onSave={async (data) => {
                 try {
+                  console.log('[App.tsx] KBEditor onSave called');
+                  console.log('[App.tsx] KBData:', JSON.stringify(data, null, 2));
+                  console.log('[App.tsx] Module count:', data.modules?.length || 0);
+
                   // Generate UUID for new KB
                   const uuid = crypto.randomUUID();
 
                   // Convert KBData to XML format
                   const xmlContent = convertKBDataToXML(data, uuid);
+                  console.log('[App.tsx] Generated XML length:', xmlContent.length);
+                  console.log('[App.tsx] Generated XML (first 2000 chars):', xmlContent.substring(0, 2000));
 
                   // Calculate module/chapter/section counts
                   const totalModules = data.modules.length;
@@ -1091,7 +1097,7 @@ function App() {
 
       {/* Footer */}
       <footer className="app-footer">
-        <p>FSP's Study Tools - AI-Powered Aviation Training</p>
+        <p>FSP's Study Tools - AI-Powered Learning</p>
         <p className="footer-meta">
           Phase 5: UI/UX Development | Database + AI + Knowledge Base Engine Complete
         </p>

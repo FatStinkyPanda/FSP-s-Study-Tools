@@ -467,6 +467,75 @@ export class KnowledgeBaseManager {
   }
 
   /**
+   * Search all knowledge bases for content
+   */
+  async searchAllKBs(
+    query: string,
+    limit = 20
+  ): Promise<
+    Array<{
+      kb_id: number;
+      kb_title: string;
+      module_id: string;
+      chapter_id: string;
+      section_id: string;
+      content: string;
+      content_type: string;
+      rank: number;
+    }>
+  > {
+    // Use FTS5 for full-text search across all KBs
+    const results = this.db.query<{
+      kb_id: number;
+      section_id: string;
+      content: string;
+      keywords: string;
+      rank: number;
+    }>(
+      `SELECT
+         kb_id,
+         section_id,
+         highlight(content_fts, 2, '<mark>', '</mark>') as content,
+         keywords,
+         bm25(content_fts) as rank
+       FROM content_fts
+       WHERE content_fts MATCH ?
+       ORDER BY rank
+       LIMIT ?`,
+      [query, limit]
+    );
+
+    // Get KB titles
+    const kbIds = [...new Set(results.map((r) => r.kb_id))];
+    const kbTitles: Record<number, string> = {};
+    for (const kbId of kbIds) {
+      const kb = this.db.query<{ title: string }>(
+        'SELECT title FROM knowledge_bases WHERE id = ?',
+        [kbId]
+      );
+      if (kb.length > 0) {
+        kbTitles[kbId] = kb[0].title;
+      }
+    }
+
+    // Parse section IDs (format: module/chapter/section)
+    return results.map((row) => {
+      const [moduleId, chapterId, sectionId] = row.section_id.split('/');
+      const keywordParts = row.keywords.split(' ');
+      return {
+        kb_id: row.kb_id,
+        kb_title: kbTitles[row.kb_id] || 'Unknown KB',
+        module_id: moduleId || '',
+        chapter_id: chapterId || '',
+        section_id: sectionId || '',
+        content: row.content,
+        content_type: keywordParts[keywordParts.length - 1] || 'text',
+        rank: row.rank,
+      };
+    });
+  }
+
+  /**
    * Get statistics for knowledge base
    */
   async getStatistics(kbId: number): Promise<{

@@ -760,6 +760,26 @@ function KBViewer({ kbId, kbTitle, onBack }: KBViewerProps) {
         kbTitle={kbTitle}
         currentTopic={getSelectionTitle()}
         sectionContent={getSelectionContent() || undefined}
+        kbStructure={parsedKB ? {
+          title: parsedKB.title,
+          modules: parsedKB.modules.map(m => ({
+            id: m.id,
+            title: m.title,
+            description: m.description,
+            order: m.order,
+            chapters: m.chapters.map(c => ({
+              id: c.id,
+              title: c.title,
+              description: c.description,
+              order: c.order,
+              sections: c.sections.map(s => ({
+                id: s.id,
+                title: s.title,
+                order: s.order
+              }))
+            }))
+          }))
+        } : undefined}
       />
     </div>
   );
