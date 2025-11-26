@@ -1,6 +1,7 @@
 import { DatabaseManager } from '../database/DatabaseManager';
 import { XMLParser, ParsedKnowledgeBase } from './XMLParser';
 import { ContentChunker } from './ContentChunker';
+import { SemanticIndexer, SemanticSearchResult } from '../indexer';
 import { KnowledgeBase } from '../../shared/types';
 import { ParserManager, ParsedDocument } from '../parser';
 
@@ -20,11 +21,13 @@ export class KnowledgeBaseManager {
   private xmlParser: XMLParser;
   private chunker: ContentChunker;
   private parserManager: ParserManager;
+  private semanticIndexer: SemanticIndexer;
 
   constructor(private db: DatabaseManager) {
     this.xmlParser = new XMLParser();
     this.chunker = new ContentChunker();
     this.parserManager = new ParserManager();
+    this.semanticIndexer = new SemanticIndexer(db);
   }
 
   /**
@@ -321,7 +324,7 @@ export class KnowledgeBaseManager {
   }
 
   /**
-   * Index content chunks for full-text search
+   * Index content chunks for full-text search and semantic search
    */
   private async indexChunks(chunks: IndexedContent[]): Promise<void> {
     this.db.beginTransaction();
@@ -352,6 +355,26 @@ export class KnowledgeBaseManager {
       }
 
       this.db.commitTransaction();
+
+      // Also index for semantic search (async, non-blocking)
+      const contentChunks = chunks.map(chunk => ({
+        id: chunk.chunkId,
+        content: chunk.content,
+        type: chunk.metadata.type as 'text' | 'code' | 'table' | 'list' | 'heading',
+        metadata: {
+          sectionId: `${chunk.metadata.moduleId}/${chunk.metadata.chapterId}/${chunk.metadata.sectionId}`,
+          moduleId: chunk.metadata.moduleId,
+          chapterId: chunk.metadata.chapterId,
+          startPosition: 0,
+          endPosition: chunk.content.length,
+          wordCount: chunk.content.split(/\s+/).length,
+          characterCount: chunk.content.length,
+        },
+      }));
+
+      if (chunks.length > 0) {
+        await this.semanticIndexer.indexChunks(chunks[0].metadata.kbId, contentChunks);
+      }
     } catch (error) {
       this.db.rollbackTransaction();
       throw new Error(`Failed to index chunks: ${(error as Error).message}`);
@@ -703,5 +726,73 @@ export class KnowledgeBaseManager {
         warnings: [],
       };
     }
+  }
+
+  /**
+   * Perform semantic search within a knowledge base
+   * Uses TF-IDF embeddings for similarity matching
+   */
+  async semanticSearch(
+    kbId: number,
+    query: string,
+    limit: number = 10
+  ): Promise<SemanticSearchResult[]> {
+    return this.semanticIndexer.search(kbId, query, limit);
+  }
+
+  /**
+   * Perform semantic search across all knowledge bases
+   */
+  async semanticSearchAll(
+    query: string,
+    limit: number = 20
+  ): Promise<SemanticSearchResult[]> {
+    return this.semanticIndexer.searchAll(query, limit);
+  }
+
+  /**
+   * Find similar content chunks within a knowledge base
+   */
+  async findSimilarContent(
+    kbId: number,
+    chunkId: string,
+    limit: number = 5
+  ): Promise<SemanticSearchResult[]> {
+    return this.semanticIndexer.findSimilar(kbId, chunkId, limit);
+  }
+
+  /**
+   * Get semantic indexing statistics
+   */
+  async getSemanticStats(kbId?: number): Promise<{
+    totalChunks: number;
+    vocabularySize: number;
+    averageEmbeddingDensity: number;
+  }> {
+    return this.semanticIndexer.getStats(kbId);
+  }
+
+  /**
+   * Re-index all semantic embeddings (useful after major content updates)
+   */
+  async reindexSemanticContent(): Promise<number> {
+    return this.semanticIndexer.reindexAll();
+  }
+
+  /**
+   * Cluster content by semantic similarity
+   */
+  async clusterContent(
+    kbId: number,
+    numClusters: number = 5
+  ): Promise<Map<number, string[]>> {
+    return this.semanticIndexer.clusterContent(kbId, numClusters);
+  }
+
+  /**
+   * Get access to the semantic indexer for advanced operations
+   */
+  getSemanticIndexer(): SemanticIndexer {
+    return this.semanticIndexer;
   }
 }

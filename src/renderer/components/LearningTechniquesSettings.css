@@ -1,0 +1,395 @@
+/* Learning Techniques Settings */
+
+.learning-techniques-settings {
+  padding: 1.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.settings-header {
+  margin-bottom: 1.5rem;
+}
+
+.settings-header h2 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.5rem;
+  color: var(--text-primary, #f8fafc);
+}
+
+.settings-subtitle {
+  margin: 0;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.875rem;
+}
+
+/* Tabs */
+.settings-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-color, #334155);
+  padding-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.settings-tabs button {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary, #94a3b8);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+}
+
+.settings-tabs button:hover {
+  background: var(--bg-tertiary, #334155);
+  color: var(--text-primary, #f8fafc);
+}
+
+.settings-tabs button.active {
+  background: var(--accent-color, #3b82f6);
+  border-color: var(--accent-color, #3b82f6);
+  color: white;
+}
+
+/* Content */
+.settings-content {
+  margin-bottom: 2rem;
+}
+
+.techniques-section h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.125rem;
+  color: var(--text-primary, #f8fafc);
+}
+
+.section-description {
+  margin: 0 0 1.5rem 0;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.875rem;
+}
+
+/* Techniques Grid */
+.techniques-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 1rem;
+}
+
+/* Technique Card */
+.technique-card {
+  padding: 1rem;
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 8px;
+  background: var(--bg-secondary, #1e293b);
+  transition: all 0.2s ease;
+}
+
+.technique-card.enabled {
+  border-color: var(--accent-color, #3b82f6);
+  background: var(--bg-secondary, #1e293b);
+}
+
+.technique-card.disabled {
+  opacity: 0.6;
+}
+
+.technique-card.user {
+  border-left: 3px solid #f59e0b;
+}
+
+.technique-card.hybrid {
+  border-left: 3px solid #8b5cf6;
+}
+
+.technique-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+}
+
+.technique-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.technique-toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-color, #3b82f6);
+}
+
+.technique-toggle input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.technique-name {
+  font-weight: 600;
+  color: var(--text-primary, #f8fafc);
+}
+
+.technique-type-badge {
+  font-size: 0.625rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.technique-type-badge.program {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.technique-type-badge.user {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.technique-type-badge.hybrid {
+  background: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
+}
+
+.technique-description {
+  margin: 0 0 0.75rem 0;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.technique-research,
+.technique-implementation,
+.technique-guidance {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color, #334155);
+}
+
+.technique-research strong,
+.technique-implementation strong,
+.technique-guidance strong {
+  color: var(--text-primary, #f8fafc);
+}
+
+/* Protocol Section */
+.protocol-toggle {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: var(--bg-secondary, #1e293b);
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #334155);
+}
+
+.protocol-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+}
+
+.protocol-toggle input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent-color, #3b82f6);
+}
+
+.protocol-phases {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.protocol-phase {
+  padding: 1rem;
+  background: var(--bg-secondary, #1e293b);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 8px;
+}
+
+.protocol-phase h4 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1rem;
+  color: var(--text-primary, #f8fafc);
+}
+
+.phase-timing {
+  font-size: 0.625rem;
+  color: var(--accent-color, #60a5fa);
+  margin-bottom: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.phase-techniques {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.phase-techniques li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.type-indicator {
+  font-size: 0.625rem;
+  font-weight: 600;
+  padding: 0.125rem 0.25rem;
+  border-radius: 2px;
+}
+
+.type-indicator.program {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.type-indicator.user {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.type-indicator.hybrid {
+  background: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
+}
+
+.technique-ref {
+  color: var(--text-primary, #f8fafc);
+}
+
+.technique-notes {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+/* General Settings */
+.settings-general {
+  padding: 1.5rem;
+  background: var(--bg-secondary, #1e293b);
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #334155);
+  margin-bottom: 1.5rem;
+}
+
+.settings-general h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  color: var(--text-primary, #f8fafc);
+}
+
+.settings-row {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.setting-field {
+  flex: 1;
+  min-width: 200px;
+}
+
+.setting-field label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.setting-field select,
+.setting-field input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 4px;
+  background: var(--bg-tertiary, #334155);
+  color: var(--text-primary, #f8fafc);
+  font-size: 0.875rem;
+}
+
+.setting-field select:focus,
+.setting-field input:focus {
+  outline: none;
+  border-color: var(--accent-color, #3b82f6);
+}
+
+/* Actions */
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+.cancel-btn {
+  padding: 0.75rem 1.5rem;
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary, #94a3b8);
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+
+.cancel-btn:hover {
+  background: var(--bg-tertiary, #334155);
+  color: var(--text-primary, #f8fafc);
+}
+
+.save-btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent-color, #3b82f6);
+  color: white;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.save-btn:hover {
+  background: #2563eb;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .learning-techniques-settings {
+    padding: 1rem;
+  }
+
+  .techniques-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .protocol-phases {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-row {
+    flex-direction: column;
+  }
+
+  .setting-field {
+    min-width: 100%;
+  }
+}
+
+/* Focus States */
+.settings-tabs button:focus-visible,
+.technique-toggle:focus-visible,
+.cancel-btn:focus-visible,
+.save-btn:focus-visible {
+  outline: 2px solid var(--accent-color, #3b82f6);
+  outline-offset: 2px;
+}

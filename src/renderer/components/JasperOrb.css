@@ -1,0 +1,290 @@
+/* Jasper AI Orb - Dynamic Visual Component */
+
+.jasper-orb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.2s ease;
+}
+
+.jasper-orb:hover {
+  transform: scale(1.05);
+}
+
+.jasper-orb:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 4px;
+  border-radius: 50%;
+}
+
+.jasper-orb-canvas {
+  border-radius: 50%;
+  filter: drop-shadow(0 4px 20px rgba(0, 0, 0, 0.3));
+}
+
+.jasper-orb-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary, #94a3b8);
+  text-transform: uppercase;
+  opacity: 0.8;
+  transition: opacity 0.2s ease, color 0.2s ease;
+}
+
+.jasper-orb:hover .jasper-orb-label {
+  opacity: 1;
+  color: var(--text-primary, #f8fafc);
+}
+
+/* Size Variants */
+.jasper-orb-small {
+  --orb-size: 80px;
+}
+
+.jasper-orb-small .jasper-orb-label {
+  font-size: 0.625rem;
+}
+
+.jasper-orb-medium {
+  --orb-size: 120px;
+}
+
+.jasper-orb-large {
+  --orb-size: 180px;
+}
+
+.jasper-orb-large .jasper-orb-label {
+  font-size: 0.875rem;
+}
+
+/* State-specific Styles */
+.jasper-orb-idle .jasper-orb-canvas {
+  animation: idle-float 4s ease-in-out infinite;
+}
+
+.jasper-orb-listening .jasper-orb-canvas {
+  animation: listening-expand 0.5s ease-in-out infinite alternate;
+}
+
+.jasper-orb-thinking .jasper-orb-canvas {
+  animation: thinking-rotate 2s linear infinite;
+}
+
+.jasper-orb-speaking .jasper-orb-canvas {
+  animation: speaking-pulse 0.3s ease-in-out infinite alternate;
+}
+
+.jasper-orb-processing .jasper-orb-canvas {
+  animation: processing-spin 1s linear infinite;
+}
+
+.jasper-orb-success .jasper-orb-canvas {
+  animation: success-bounce 0.5s ease-out;
+}
+
+.jasper-orb-error .jasper-orb-canvas {
+  animation: error-shake 0.5s ease-in-out;
+}
+
+.jasper-orb-attention .jasper-orb-canvas {
+  animation: attention-glow 1s ease-in-out infinite alternate;
+}
+
+/* Animations */
+@keyframes idle-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes listening-expand {
+  0% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(1.03);
+  }
+}
+
+@keyframes thinking-rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes speaking-pulse {
+  0% {
+    transform: scale(1);
+    filter: drop-shadow(0 4px 20px rgba(0, 188, 212, 0.3));
+  }
+  100% {
+    transform: scale(1.02);
+    filter: drop-shadow(0 4px 30px rgba(0, 188, 212, 0.6));
+  }
+}
+
+@keyframes processing-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes success-bounce {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes error-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  20%, 60% {
+    transform: translateX(-5px);
+  }
+  40%, 80% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes attention-glow {
+  0% {
+    filter: drop-shadow(0 4px 20px rgba(255, 235, 59, 0.3));
+  }
+  100% {
+    filter: drop-shadow(0 4px 40px rgba(255, 235, 59, 0.8));
+  }
+}
+
+/* State Colors in Label */
+.jasper-orb-idle .jasper-orb-label {
+  color: #4A90D9;
+}
+
+.jasper-orb-listening .jasper-orb-label {
+  color: #64B5F6;
+}
+
+.jasper-orb-thinking .jasper-orb-label {
+  color: #7C4DFF;
+}
+
+.jasper-orb-speaking .jasper-orb-label {
+  color: #00BCD4;
+}
+
+.jasper-orb-processing .jasper-orb-label {
+  color: #FF9800;
+}
+
+.jasper-orb-success .jasper-orb-label {
+  color: #4CAF50;
+}
+
+.jasper-orb-error .jasper-orb-label {
+  color: #F44336;
+}
+
+.jasper-orb-attention .jasper-orb-label {
+  color: #FFEB3B;
+}
+
+/* Accessibility - Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .jasper-orb-canvas,
+  .jasper-orb {
+    animation: none !important;
+  }
+
+  .jasper-orb:hover {
+    transform: none;
+  }
+}
+
+/* Container Styles */
+.jasper-orb-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem;
+  min-height: 200px;
+}
+
+/* Status Indicator */
+.jasper-status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #94a3b8);
+  margin-top: 1rem;
+}
+
+.jasper-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  animation: status-pulse 1.5s ease-in-out infinite;
+}
+
+.jasper-status-dot.idle {
+  background-color: #4A90D9;
+}
+
+.jasper-status-dot.listening {
+  background-color: #64B5F6;
+}
+
+.jasper-status-dot.thinking {
+  background-color: #7C4DFF;
+}
+
+.jasper-status-dot.speaking {
+  background-color: #00BCD4;
+}
+
+.jasper-status-dot.processing {
+  background-color: #FF9800;
+}
+
+.jasper-status-dot.success {
+  background-color: #4CAF50;
+}
+
+.jasper-status-dot.error {
+  background-color: #F44336;
+}
+
+.jasper-status-dot.attention {
+  background-color: #FFEB3B;
+}
+
+@keyframes status-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
+}

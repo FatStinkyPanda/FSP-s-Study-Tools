@@ -117,7 +117,7 @@ export interface LocalModelConfig {
   id: string;
   name: string;
   path: string;
-  type: 'onnx' | 'gguf';
+  type: 'onnx' | 'gguf' | 'transformers';
   contextWindow: number;
   loadOnStartup: boolean;
 }

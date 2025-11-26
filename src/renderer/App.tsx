@@ -3,9 +3,11 @@ import './App.css';
 import StudySession from './StudySession';
 import KBEditor from './components/KBEditor';
 import Dashboard from './components/Dashboard';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
 import SearchResults from './components/SearchResults';
 import UpdateNotification from './components/UpdateNotification';
 import KBViewer from './components/KBViewer';
+import JasperChat from './components/JasperChat';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ErrorNotificationContainer, useErrorNotifications } from './components/ErrorNotification';
 import { toUserFriendlyError, errorToNotification, logError } from '../shared/errors';
@@ -250,7 +252,8 @@ function App() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [loading, setLoading] = useState(true);
   const [appVersion, setAppVersion] = useState('');
-  const [currentView, setCurrentView] = useState<'home' | 'browse' | 'study' | 'editor' | 'settings' | 'dashboard'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'browse' | 'study' | 'editor' | 'settings' | 'dashboard' | 'analytics' | 'jasper'>('home');
+  const [jasperKBs, setJasperKBs] = useState<Array<{ id: number; title: string; enabled: boolean }>>([]);
   const [settings, setSettings] = useState<AppSettings>({});
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -326,6 +329,8 @@ function App() {
       // Load knowledge bases
       const kbs = await window.electronAPI.invoke('kb:list') as KnowledgeBase[];
       setKnowledgeBases(kbs);
+      // Initialize Jasper KB list with all KBs enabled by default
+      setJasperKBs(kbs.map(kb => ({ id: kb.id, title: kb.title, enabled: true })));
 
       // Load settings
       const loadedSettings = await window.electronAPI.invoke('settings:getAll') as AppSettings;
@@ -547,6 +552,18 @@ function App() {
           [Dashboard]
         </button>
         <button
+          className={currentView === 'analytics' ? 'active' : ''}
+          onClick={() => setCurrentView('analytics')}
+        >
+          [Analytics]
+        </button>
+        <button
+          className={currentView === 'jasper' ? 'active' : ''}
+          onClick={() => setCurrentView('jasper')}
+        >
+          [Jasper AI]
+        </button>
+        <button
           className={currentView === 'browse' ? 'active' : ''}
           onClick={() => setCurrentView('browse')}
         >
@@ -693,6 +710,35 @@ function App() {
 
         {currentView === 'dashboard' && (
           <Dashboard onNavigateToStudy={() => setCurrentView('study')} />
+        )}
+
+        {currentView === 'analytics' && (
+          <AnalyticsDashboard
+            onNavigateToStudy={(kbId?: number, sectionId?: string) => {
+              if (kbId) setStudyKbId(kbId);
+              if (sectionId) setStudySectionId(sectionId);
+              setCurrentView('study');
+            }}
+            onNavigateToSettings={() => setCurrentView('settings')}
+          />
+        )}
+
+        {currentView === 'jasper' && (
+          <JasperChat
+            knowledgeBases={jasperKBs}
+            onNavigateToSource={(kbId: number, sectionId: string) => {
+              setStudyKbId(kbId);
+              setStudySectionId(sectionId);
+              setCurrentView('study');
+            }}
+            onToggleKnowledgeBase={(kbId: number, enabled: boolean) => {
+              setJasperKBs(prev =>
+                prev.map(kb =>
+                  kb.id === kbId ? { ...kb, enabled } : kb
+                )
+              );
+            }}
+          />
         )}
 
         {currentView === 'study' && (

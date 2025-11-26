@@ -9,6 +9,7 @@ import { SettingsManager } from '../core/settings';
 import { ProgressManager } from '../core/progress';
 import { TestGenerator, TestQuestion } from '../core/tests';
 import { UpdateManager } from '../core/update';
+import { RecommendationEngine } from '../core/recommendation';
 import { KB_TOOLS, AIAgentToolExecutor, createToolResultMessage } from '../core/ai/AIAgentTools';
 import { AIMessage, AIToolCall } from '../shared/ai-types';
 
@@ -25,6 +26,7 @@ class Application {
   private progressManager: ProgressManager | null = null;
   private testGenerator: TestGenerator | null = null;
   private updateManager: UpdateManager | null = null;
+  private recommendationEngine: RecommendationEngine | null = null;
 
   constructor() {
     this.initializeApp();
@@ -138,6 +140,14 @@ class Application {
 
     // Initialize Test Generator (with progressManager for adaptive mode)
     this.testGenerator = new TestGenerator(this.databaseManager, this.aiManager, this.settingsManager, this.progressManager);
+
+    // Initialize Recommendation Engine
+    const semanticIndexer = this.knowledgeBaseManager?.getSemanticIndexer();
+    this.recommendationEngine = new RecommendationEngine(
+      this.databaseManager,
+      this.progressManager,
+      semanticIndexer
+    );
 
     // Initialize Update Manager
     this.updateManager = new UpdateManager();
@@ -542,6 +552,55 @@ class Application {
       return this.knowledgeBaseManager.getSampleXML();
     });
 
+    // Semantic search handlers
+    ipcMain.handle('kb:semanticSearch', async (_event, kbId: number, query: string, limit?: number) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.semanticSearch(kbId, query, limit || 10);
+    });
+
+    ipcMain.handle('kb:semanticSearchAll', async (_event, query: string, limit?: number) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.semanticSearchAll(query, limit || 20);
+    });
+
+    ipcMain.handle('kb:findSimilar', async (_event, kbId: number, chunkId: string, limit?: number) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.findSimilarContent(kbId, chunkId, limit || 5);
+    });
+
+    ipcMain.handle('kb:getSemanticStats', async (_event, kbId?: number) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.getSemanticStats(kbId);
+    });
+
+    ipcMain.handle('kb:reindexSemantic', async () => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      return this.knowledgeBaseManager.reindexSemanticContent();
+    });
+
+    ipcMain.handle('kb:clusterContent', async (_event, kbId: number, numClusters?: number) => {
+      if (!this.knowledgeBaseManager) {
+        throw new Error('Knowledge Base Manager not initialized');
+      }
+      const clusters = await this.knowledgeBaseManager.clusterContent(kbId, numClusters || 5);
+      // Convert Map to object for IPC serialization
+      const result: Record<number, string[]> = {};
+      clusters.forEach((value, key) => {
+        result[key] = value;
+      });
+      return result;
+    });
+
     ipcMain.handle('kb:importFile', async () => {
       if (!this.knowledgeBaseManager) {
         throw new Error('Knowledge Base Manager not initialized');
@@ -757,6 +816,13 @@ class Application {
       return this.progressManager.getLearningVelocity(kbId, weeks);
     });
 
+    ipcMain.handle('progress:getTimeDistribution', async (_event, kbId: number) => {
+      if (!this.progressManager) {
+        throw new Error('Progress Manager not initialized');
+      }
+      return this.progressManager.getTimeDistribution(kbId);
+    });
+
     ipcMain.handle('progress:export', async (_event, kbId: number) => {
       if (!this.progressManager) {
         throw new Error('Progress Manager not initialized');
@@ -870,6 +936,54 @@ class Application {
         throw new Error('Test Generator not initialized');
       }
       return this.testGenerator.getTestStats(testId);
+    });
+
+    // Recommendation engine handlers
+    ipcMain.handle('recommend:getRecommendations', async (_event, kbId: number, limit?: number) => {
+      if (!this.recommendationEngine) {
+        throw new Error('Recommendation Engine not initialized');
+      }
+      return this.recommendationEngine.getRecommendations(kbId, limit || 5);
+    });
+
+    ipcMain.handle('recommend:generatePath', async (_event, kbId: number, options?: {
+      targetSections?: string[];
+      timeAvailable?: number;
+      adaptiveMode?: boolean;
+      includeReview?: boolean;
+    }) => {
+      if (!this.recommendationEngine) {
+        throw new Error('Recommendation Engine not initialized');
+      }
+      return this.recommendationEngine.generateLearningPath(kbId, options || {});
+    });
+
+    ipcMain.handle('recommend:generateSession', async (_event, kbId: number, durationMinutes?: number) => {
+      if (!this.recommendationEngine) {
+        throw new Error('Recommendation Engine not initialized');
+      }
+      return this.recommendationEngine.generateStudySession(kbId, durationMinutes || 30);
+    });
+
+    ipcMain.handle('recommend:updateSpacedRepetition', async (_event, kbId: number, sectionId: string, score: number) => {
+      if (!this.recommendationEngine) {
+        throw new Error('Recommendation Engine not initialized');
+      }
+      return this.recommendationEngine.updateSpacedRepetition(kbId, sectionId, score);
+    });
+
+    ipcMain.handle('recommend:findRelated', async (_event, kbId: number, sectionId: string, limit?: number) => {
+      if (!this.recommendationEngine) {
+        throw new Error('Recommendation Engine not initialized');
+      }
+      return this.recommendationEngine.findRelatedContent(kbId, sectionId, limit || 5);
+    });
+
+    ipcMain.handle('recommend:analyzeLearning', async (_event, kbId: number) => {
+      if (!this.recommendationEngine) {
+        throw new Error('Recommendation Engine not initialized');
+      }
+      return this.recommendationEngine.analyzeLearningPatterns(kbId);
     });
 
     // Update operations

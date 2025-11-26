@@ -433,15 +433,152 @@ npm run package:win
 </log_config>
 ```
 
+## Jasper AI Learning Assistant
+
+FSP's Study Tools includes **Jasper**, a dedicated AI learning assistant that provides personalized, adaptive learning experiences.
+
+### Jasper Core Features
+
+- **Knowledge Base Access:** Connects to user-selected knowledge bases with full source attribution
+- **Learning Technique Integration:** Applies evidence-based learning techniques (retrieval practice, spaced repetition, elaborative interrogation, etc.)
+- **Conversational Learning:** Natural back-and-forth dialogue with context maintenance
+- **Visual Persona:** Live dynamic orb with visual state feedback (listening, thinking, speaking)
+- **Voice Interaction:** Full speech-to-text and text-to-speech capabilities
+
+### Jasper Modes
+
+1. **Live Chat Mode** - Voice-to-voice conversation with real-time transcript
+2. **Study Mode** - Guided learning sessions with technique application
+3. **Review Mode** - Spaced repetition and retrieval practice sessions
+
+## Text-to-Voice with Synchronized Highlighting
+
+FSP's Study Tools features an advanced text-to-speech system with synchronized visual highlighting for optimal reading comprehension and learning flow.
+
+### Voice System Features
+
+**OpenVoice Integration**
+- Powered by [OpenVoice](https://github.com/myshell-ai/OpenVoice) - an open-source instant voice cloning solution
+- **5 Default Voices:** Natural male and female voices with various accents
+- **Custom Voice Training:** Users can train the system with their own voice
+- **Voice Library:** Save and name multiple custom voices for different contexts
+- Adjustable speech rate (0.5x - 2.0x), pitch, and volume
+
+**Synchronized Text Highlighting**
+- **Hotspot Highlighting:** Current active word is prominently highlighted with high visibility
+- **Fading Trail Effect:** Past words have a gradually fading highlight creating a visual flow
+- **Anticipatory Glow:** Upcoming words have a subtle pre-highlight for reading anticipation
+- **Smooth Transitions:** Word-to-word highlighting flows beautifully with no jarring jumps
+- **Auto-scroll:** View automatically scrolls to keep highlighted text centered
+
+**Highlight Styles**
+1. **Word Highlight:** Current word spotlighted with fading past/future words
+2. **Karaoke Style:** Words illuminate progressively and stay lit
+3. **Underline Flow:** Smooth moving underline that follows speech
+4. **Color Wave:** Gradient wave that flows through text in sync with speech
+
+**Voice Settings**
+```
+Voice Selection:
+├── Default Voices (5 built-in options)
+├── Custom Trained Voices (user-created)
+└── Voice Library (saved named voices)
+
+Speech Parameters:
+├── Rate: 0.5x - 2.0x (default: 1.0x)
+├── Pitch: -50% to +50% (default: 0%)
+├── Volume: 0% - 100% (default: 80%)
+└── Emotional Tone: neutral, encouraging, serious
+
+Highlight Settings:
+├── Style: word, karaoke, underline, wave
+├── Hotspot Color: customizable
+├── Fade Duration: 0.5s - 3.0s
+├── Anticipation Range: 1-5 words ahead
+└── Auto-scroll: on/off with speed control
+```
+
+## Learning Retention Techniques
+
+FSP's Study Tools integrates comprehensive evidence-based learning techniques organized into user-implementable (physical/environmental) and program-integrated (software-based) categories.
+
+### Program-Integrated Techniques
+
+Each technique can be individually enabled/disabled in settings:
+
+**Core Techniques:**
+- **Retrieval Practice:** Active recall through flashcards and practice questions
+- **Spaced Repetition:** SM-2 algorithm with expanding review intervals
+- **Interleaving:** Automatic mixing of topics for discrimination learning
+- **Teaching Simulation (Feynman):** Jasper acts as a student for explanation practice
+- **Elaborative Interrogation:** "Why" and "how" prompts for deep processing
+- **Dual Coding:** Automatic diagram and visual generation from text
+- **Generative Learning:** Prompts for user-created summaries and examples
+- **Desirable Difficulties:** Variable font rendering, delayed feedback
+- **Successive Relearning:** Mastery-based spaced repetition
+
+**Emerging Techniques:**
+- **Curiosity Priming:** Intriguing questions before content delivery
+- **Virtual Context Environments:** Distinct visual themes per subject
+- **Emotional Anchoring:** Narrative framing and stakes creation
+- **Predictive Error Maximization:** Misconception presentation and resolution
+- **Adversarial Learning:** Debate mode with Jasper
+- **Autobiographical Embedding:** Character-based learning narratives
+- **Anticipatory Priming:** Pre-session hints and puzzles
+- **Counterfactual Elaboration:** "What if false?" reasoning prompts
+- **Memory Competition:** Similar item discrimination training
+- **Failure-First Learning:** Pre-tests before instruction
+- **Rhythmic Encoding:** Content restructured with rhythmic patterns
+
+### User-Implementable Techniques (Guidance Provided)
+
+The program provides guidance for physical techniques users implement themselves:
+- Embodied Cognition and Gesture
+- Olfactory Context Libraries (scent-based memory)
+- Proprioceptive Context Encoding (body position)
+- Micro-Stress Inoculation Windows
+- Interoceptive State Matching
+- Cross-Modal Translation Chains
+- Exercise Timing Around Learning
+- Handwriting for Encoding
+- Temporal Landmark Manufacturing
+- Micro-Nap Interleaving
+- Sleep Optimization
+
+### The Full-Stack Learning Protocol
+
+A comprehensive learning session integrating all techniques:
+
+**Before Session:**
+- Curiosity-priming fragments (program)
+- Temporal landmark creation (user)
+- Micro-stress inoculation (user)
+- Light exercise (user)
+
+**During Session:**
+- Failure-first testing (program)
+- Adversarial processing (program)
+- Olfactory/proprioceptive context (user)
+- Jasper technique application (program)
+
+**After Session:**
+- Exercise (user)
+- Cross-modal translation (user + program)
+- Counterfactual elaboration (program)
+
+**Over Time:**
+- Successive relearning with spaced intervals (program)
+- Memory competition tests (program)
+- Periodic adversarial review (program)
+
 ## Future Enhancements
 
 1. **Cloud Sync:** Optional cloud backup/sync
 2. **Collaboration:** Share knowledge bases
 3. **Mobile Companion:** Android/iOS apps
-4. **Voice Interface:** Speech-to-text/text-to-speech
-5. **Advanced Analytics:** Learning pattern analysis
-6. **Plugin System:** Extensible architecture
-7. **Multi-language Support:** Internationalization
+4. **Advanced Analytics:** Learning pattern analysis (partially implemented)
+5. **Plugin System:** Extensible architecture
+6. **Multi-language Support:** Internationalization
 
 ## Support & Documentation
 
@@ -453,25 +590,43 @@ npm run package:win
 
 ## Development Checklist
 
-- [ ] Project setup and structure
-- [ ] Database implementation
-- [ ] XML processing system
-- [ ] Local AI model integration
-- [ ] API provider integration
-- [ ] File parsing system
-- [ ] Semantic indexing
-- [ ] Knowledge base editor
-- [ ] Progress tracking
-- [ ] Practice test system
-- [ ] Conversation management
-- [ ] UI implementation
-- [ ] Settings management
-- [ ] Error handling
+### Phase 1-2: Core Infrastructure & AI Integration
+- [x] Project setup and structure
+- [x] Database implementation (SQLite with better-sqlite3)
+- [x] XML processing system (XMLParser with auto-structure detection)
+- [x] Local AI model integration (ONNX Runtime, llama.cpp)
+- [x] API provider integration (OpenAI, Anthropic, Google, OpenRouter)
+
+### Phase 3: Knowledge Base Engine
+- [x] File parsing system (PDF, DOCX)
+- [ ] Additional file format support (Markdown, EPUB, PPT)
+- [x] Semantic indexing (TF-IDF vector embeddings)
+- [x] Full-text search (SQLite FTS5)
+
+### Phase 4: Learning Features
+- [x] Progress tracking (ProgressManager with SM-2 algorithm)
+- [x] Practice test system (AI-powered TestGenerator)
+- [x] Conversation management (ConversationManager)
+- [x] Recommendation engine (personalized learning paths)
+- [ ] Jasper AI Learning Assistant
+- [ ] Learning retention techniques integration
+- [ ] Text-to-Voice with synchronized highlighting (OpenVoice)
+
+### Phase 5: UI/UX Development
+- [x] UI implementation (React + Electron)
+- [x] Analytics Dashboard with progress visualization
+- [x] SVG-based charting library (no external dependencies)
+- [ ] Knowledge base editor (enhanced version)
+- [x] Settings management
+- [ ] Jasper dynamic orb visual component
+
+### Phase 6: Polish & Packaging
+- [x] Testing suite (Jest with comprehensive tests)
+- [x] Error handling (enhanced user-friendly error system)
 - [ ] Performance optimization
-- [ ] Security implementation
-- [ ] Testing suite
-- [ ] Documentation
-- [ ] Packaging system
+- [ ] Security implementation (API key encryption)
+- [ ] Documentation (API.md, USER_GUIDE.md, DEVELOPER.md)
+- [ ] Packaging system (electron-builder)
 - [ ] Auto-update system
 - [ ] Release preparation
 

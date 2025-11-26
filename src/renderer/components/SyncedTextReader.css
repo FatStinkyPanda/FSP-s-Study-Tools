@@ -1,0 +1,360 @@
+/* Synced Text Reader - Text-to-Voice with Synchronized Highlighting */
+
+.synced-text-reader {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  font-family: var(--font-family-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+}
+
+/* Controls */
+.synced-text-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary, #1e293b);
+  border-radius: 8px;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.synced-text-controls-left {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.synced-text-controls-right {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.synced-control-btn {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 4px;
+  background: var(--bg-tertiary, #0f172a);
+  color: var(--text-primary, #f8fafc);
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+
+.synced-control-btn:hover {
+  background: var(--bg-hover, #1e293b);
+}
+
+.synced-control-play:hover {
+  border-color: #4ade80;
+  color: #4ade80;
+}
+
+.synced-control-pause:hover {
+  border-color: #fbbf24;
+  color: #fbbf24;
+}
+
+.synced-control-resume:hover {
+  border-color: #4ade80;
+  color: #4ade80;
+}
+
+.synced-control-stop:hover {
+  border-color: #f87171;
+  color: #f87171;
+}
+
+.synced-control-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.875rem;
+}
+
+.synced-voice-select {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 4px;
+  background: var(--bg-tertiary, #0f172a);
+  color: var(--text-primary, #f8fafc);
+  font-size: 0.875rem;
+  max-width: 200px;
+}
+
+/* Text Content */
+.synced-text-content {
+  padding: 1.5rem;
+  background: var(--bg-secondary, #1e293b);
+  border-radius: 8px;
+  line-height: 2;
+  font-size: 1.125rem;
+  color: var(--text-primary, #f8fafc);
+  position: relative;
+  overflow: auto;
+  max-height: 60vh;
+}
+
+.synced-text-content.synced-text-speaking {
+  background: var(--bg-tertiary, #0f172a);
+}
+
+/* Word Styles */
+.synced-word {
+  display: inline;
+  padding: 0.125rem 0.25rem;
+  margin: 0 0.0625rem;
+  border-radius: 4px;
+  transition: all var(--fade-duration, 0.3s) ease;
+  cursor: default;
+}
+
+/* Active Word - Hotspot */
+.synced-word-active {
+  font-weight: 600;
+  transform: scale(1.05);
+  display: inline-block;
+  position: relative;
+  z-index: 10;
+}
+
+/* Word Style Variants */
+.synced-word-style-word {
+  animation: hotspot-pulse 0.4s ease-out;
+}
+
+.synced-word-style-karaoke {
+  animation: karaoke-illuminate 0.3s ease-out forwards;
+}
+
+.synced-word-style-underline {
+  text-decoration: underline;
+  text-decoration-color: var(--hotspot-color, #fbbf24);
+  text-decoration-thickness: 3px;
+  text-underline-offset: 4px;
+}
+
+.synced-word-style-wave {
+  animation: wave-highlight 0.5s ease-in-out;
+}
+
+/* Past Words - Fading Trail */
+.synced-word-past {
+  opacity: 0.9;
+}
+
+.synced-word-past-1 {
+  opacity: 0.7;
+}
+
+.synced-word-past-2 {
+  opacity: 0.5;
+}
+
+.synced-word-past-3 {
+  opacity: 0.3;
+}
+
+/* Future Words - Anticipatory Glow */
+.synced-word-future {
+  opacity: 0.9;
+}
+
+.synced-word-future-1 {
+  opacity: 0.6;
+  filter: blur(0.5px);
+}
+
+.synced-word-future-2 {
+  opacity: 0.4;
+  filter: blur(1px);
+}
+
+/* Karaoke Style Past Words */
+.synced-word-karaoke-past {
+  opacity: 1;
+}
+
+/* Animations */
+@keyframes hotspot-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 var(--hotspot-color, #fbbf24);
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 0 20px 5px var(--hotspot-color, #fbbf24);
+  }
+  100% {
+    transform: scale(1.05);
+    box-shadow: 0 0 10px 2px var(--hotspot-color, #fbbf24);
+  }
+}
+
+@keyframes karaoke-illuminate {
+  0% {
+    background-color: transparent;
+  }
+  100% {
+    background-color: var(--past-fade-color, #4ade80);
+  }
+}
+
+@keyframes wave-highlight {
+  0% {
+    background: linear-gradient(90deg, transparent 0%, var(--hotspot-color, #fbbf24) 50%, transparent 100%);
+    background-size: 200% 100%;
+    background-position: -100% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Wave Overlay Effect */
+.synced-text-wave-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(251, 191, 36, 0.1) 45%,
+    rgba(251, 191, 36, 0.3) 50%,
+    rgba(251, 191, 36, 0.1) 55%,
+    transparent 100%
+  );
+  animation: wave-sweep 3s linear infinite;
+}
+
+@keyframes wave-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Scrollbar Styling */
+.synced-text-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.synced-text-content::-webkit-scrollbar-track {
+  background: var(--bg-tertiary, #0f172a);
+  border-radius: 4px;
+}
+
+.synced-text-content::-webkit-scrollbar-thumb {
+  background: var(--border-color, #334155);
+  border-radius: 4px;
+}
+
+.synced-text-content::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary, #64748b);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .synced-text-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .synced-text-controls-left,
+  .synced-text-controls-right {
+    justify-content: center;
+  }
+
+  .synced-text-content {
+    font-size: 1rem;
+    line-height: 1.8;
+  }
+
+  .synced-voice-select {
+    max-width: 100%;
+  }
+}
+
+/* Accessibility - Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .synced-word,
+  .synced-word-active,
+  .synced-text-wave-overlay {
+    animation: none;
+    transition: background-color 0.1s ease;
+  }
+}
+
+/* Focus States for Keyboard Navigation */
+.synced-control-btn:focus-visible {
+  outline: 2px solid var(--hotspot-color, #fbbf24);
+  outline-offset: 2px;
+}
+
+.synced-voice-select:focus-visible {
+  outline: 2px solid var(--hotspot-color, #fbbf24);
+  outline-offset: 2px;
+}
+
+/* Dark Theme Variables (defaults) */
+.synced-text-reader {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --bg-hover: #475569;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --border-color: #475569;
+}
+
+/* Light Theme Override */
+.synced-text-reader.light-theme {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #e2e8f0;
+  --bg-hover: #cbd5e1;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --border-color: #cbd5e1;
+}
+
+/* Highlight Intensity Modes */
+.synced-text-reader.highlight-subtle .synced-word-active {
+  box-shadow: 0 0 5px var(--hotspot-color, #fbbf24);
+}
+
+.synced-text-reader.highlight-intense .synced-word-active {
+  box-shadow: 0 0 20px 5px var(--hotspot-color, #fbbf24);
+  text-shadow: 0 0 10px var(--hotspot-color, #fbbf24);
+}
+
+/* Speaking Indicator */
+.synced-text-content.synced-text-speaking::before {
+  content: '';
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #4ade80;
+  animation: speaking-pulse 1s ease-in-out infinite;
+}
+
+@keyframes speaking-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
+}
