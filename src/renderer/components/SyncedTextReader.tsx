@@ -148,6 +148,9 @@ export function SyncedTextReader({
     }
   }, [autoPlay, words.length]);
 
+  // Threshold for using chunked synthesis (characters)
+  const LONG_TEXT_THRESHOLD = 500;
+
   // OpenVoice TTS synthesis function
   const speakWithOpenVoice = useCallback(async () => {
     if (!voiceSettings.openVoiceProfileId || words.length === 0) return;
@@ -156,8 +159,12 @@ export function SyncedTextReader({
     setOpenVoiceError(null);
 
     try {
+      // Use chunked synthesis for longer texts
+      const useChunkedSynthesis = text.length > LONG_TEXT_THRESHOLD;
+      const synthesizeChannel = useChunkedSynthesis ? 'openvoice:synthesizeLong' : 'openvoice:synthesize';
+
       // Request synthesis from OpenVoice backend
-      const result = await window.electronAPI.invoke('openvoice:synthesize', {
+      const result = await window.electronAPI.invoke(synthesizeChannel, {
         text,
         profile_id: voiceSettings.openVoiceProfileId,
         language: 'EN',
@@ -170,13 +177,57 @@ export function SyncedTextReader({
 
       // Create audio element to play the file
       const audio = new Audio(`file://${result.audioPath}`);
-      audio.volume = voiceSettings.volume / 100;
+      // For volumes up to 100%, use standard volume control
+      // For volumes above 100%, we'll use a gain node later
+      const normalizedVolume = Math.min(voiceSettings.volume / 100, 1.0);
+      audio.volume = normalizedVolume;
+
+      // If volume is above 100%, we need to use Web Audio API for amplification
+      let audioContext: AudioContext | null = null;
+      let gainNode: GainNode | null = null;
+      if (voiceSettings.volume > 100) {
+        audioContext = new AudioContext();
+        const source = audioContext.createMediaElementSource(audio);
+        gainNode = audioContext.createGain();
+        gainNode.gain.value = voiceSettings.volume / 100; // e.g., 2.0 for 200%
+        source.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        audio.volume = 1.0; // Set base volume to max when using gain
+      }
       audioRef.current = audio;
 
-      // Estimate word timing based on audio duration and word count
+      // Estimate word timing based on audio duration and weighted word lengths
       audio.onloadedmetadata = () => {
         const totalDuration = audio.duration * 1000; // Convert to ms
-        const wordDuration = totalDuration / words.length;
+
+        // Calculate weighted durations for each word
+        // Words with more characters take longer to speak
+        // Punctuation at end of words adds pause time
+        const calculateWordWeight = (word: string): number => {
+          let weight = word.length; // Base weight is character count
+
+          // Add weight for ending punctuation (pauses after sentences)
+          if (/[.!?]$/.test(word)) {
+            weight += 4; // Longer pause after sentence-ending punctuation
+          } else if (/[,;:]$/.test(word)) {
+            weight += 2; // Shorter pause after comma/semicolon
+          }
+
+          // Minimum weight of 1
+          return Math.max(weight, 1);
+        };
+
+        const wordWeights = words.map(calculateWordWeight);
+        const totalWeight = wordWeights.reduce((sum, w) => sum + w, 0);
+
+        // Calculate cumulative timing for each word
+        const wordEndTimes: number[] = [];
+        let cumulativeTime = 0;
+        for (let i = 0; i < words.length; i++) {
+          const wordDuration = (wordWeights[i] / totalWeight) * totalDuration;
+          cumulativeTime += wordDuration;
+          wordEndTimes.push(cumulativeTime);
+        }
 
         audio.onplay = () => {
           setIsSpeaking(true);
@@ -184,24 +235,51 @@ export function SyncedTextReader({
           setCurrentWordIndex(0);
           onSpeakingStart?.();
 
-          // Start word timer
-          let wordIndex = 0;
-          const advanceWord = () => {
-            if (wordIndex < words.length - 1) {
-              wordIndex++;
-              setCurrentWordIndex(wordIndex);
-              if (onWordChange && words[wordIndex]) {
-                onWordChange(wordIndex, words[wordIndex]);
-              }
-              wordTimerRef.current = setTimeout(advanceWord, wordDuration);
+          // Use requestAnimationFrame for smoother sync with audio playback
+          let animationFrameId: number | null = null;
+          let lastWordIndex = 0;
+
+          const syncWithAudio = () => {
+            if (!audioRef.current || audioRef.current.paused || audioRef.current.ended) {
+              return;
             }
+
+            const currentTime = audioRef.current.currentTime * 1000; // Convert to ms
+
+            // Find which word we should be on based on current audio time
+            let newWordIndex = 0;
+            for (let i = 0; i < wordEndTimes.length; i++) {
+              if (currentTime < wordEndTimes[i]) {
+                newWordIndex = i;
+                break;
+              }
+              newWordIndex = i;
+            }
+
+            // Only update if word changed
+            if (newWordIndex !== lastWordIndex) {
+              lastWordIndex = newWordIndex;
+              setCurrentWordIndex(newWordIndex);
+              if (onWordChange && words[newWordIndex]) {
+                onWordChange(newWordIndex, words[newWordIndex]);
+              }
+            }
+
+            // Continue syncing
+            animationFrameId = requestAnimationFrame(syncWithAudio);
           };
-          wordTimerRef.current = setTimeout(advanceWord, wordDuration);
+
+          // Start syncing
+          animationFrameId = requestAnimationFrame(syncWithAudio);
+
+          // Store cleanup function in ref for pause/stop handling
+          wordTimerRef.current = animationFrameId as unknown as NodeJS.Timeout;
         };
 
         audio.onpause = () => {
           if (wordTimerRef.current) {
-            clearTimeout(wordTimerRef.current);
+            // Cancel the animation frame (stored as number cast to NodeJS.Timeout)
+            cancelAnimationFrame(wordTimerRef.current as unknown as number);
             wordTimerRef.current = null;
           }
           setIsPaused(true);
@@ -209,7 +287,8 @@ export function SyncedTextReader({
 
         audio.onended = () => {
           if (wordTimerRef.current) {
-            clearTimeout(wordTimerRef.current);
+            // Cancel the animation frame
+            cancelAnimationFrame(wordTimerRef.current as unknown as number);
             wordTimerRef.current = null;
           }
           setIsSpeaking(false);
@@ -244,7 +323,9 @@ export function SyncedTextReader({
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = voiceSettings.rate;
     utterance.pitch = 1 + voiceSettings.pitch / 100;
-    utterance.volume = voiceSettings.volume / 100;
+    // Web Speech API volume is capped at 1.0 (100%)
+    // For higher volumes, users need to use OpenVoice custom voices
+    utterance.volume = Math.min(voiceSettings.volume / 100, 1.0);
 
     if (selectedVoice) {
       utterance.voice = selectedVoice;
@@ -342,7 +423,8 @@ export function SyncedTextReader({
       audioRef.current = null;
     }
     if (wordTimerRef.current) {
-      clearTimeout(wordTimerRef.current);
+      // Cancel animation frame (used for OpenVoice word sync)
+      cancelAnimationFrame(wordTimerRef.current as unknown as number);
       wordTimerRef.current = null;
     }
     // Handle Web Speech API

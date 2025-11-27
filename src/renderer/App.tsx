@@ -12,6 +12,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ErrorNotificationContainer, useErrorNotifications } from './components/ErrorNotification';
 import { toUserFriendlyError, errorToNotification, logError } from '../shared/errors';
 import { useOpenVoice, OpenVoiceStatus as OpenVoiceStatusType, OpenVoiceProfile as OpenVoiceProfileType } from './hooks/useOpenVoice';
+import VoiceProfileEditor from './components/VoiceProfileEditor';
 
 interface ElectronAPI {
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
@@ -76,6 +77,7 @@ interface AppSettings {
   theme?: 'dark' | 'light' | 'auto';
   // Voice settings
   voice_enabled?: boolean;
+  voice_type?: 'system' | 'custom'; // Whether to use system voice or custom voice profile
   voice_speed?: number; // 0.5 - 2.0
   voice_pitch?: number; // 0.5 - 2.0
   voice_volume?: number; // 0.0 - 1.0
@@ -310,6 +312,7 @@ function App() {
   const [voiceModalTab, setVoiceModalTab] = useState<'system' | 'custom'>('system');
   const [selectedModalVoice, setSelectedModalVoice] = useState<string>('');
   const [previewingVoice, setPreviewingVoice] = useState(false);
+  const [editingVoiceProfile, setEditingVoiceProfile] = useState<VoiceProfile | null>(null);
 
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -479,6 +482,8 @@ function App() {
 
       // Load settings
       const loadedSettings = await window.electronAPI.invoke('settings:getAll') as AppSettings;
+      console.log('[App] Loaded settings - voice_profiles:', loadedSettings.voice_profiles);
+      console.log('[App] Loaded settings - selected_voice_profile:', loadedSettings.selected_voice_profile);
       setSettings(loadedSettings);
 
       // Apply theme immediately after loading
@@ -500,34 +505,91 @@ function App() {
     }
   };
 
-  const handleSettingChange = (key: keyof AppSettings, value: string | number | string[] | boolean | VoiceProfile[]) => {
-    setSettings(prev => ({
-      ...prev,
+  const handleSettingChange = async (key: keyof AppSettings, value: string | number | string[] | boolean | VoiceProfile[]) => {
+    const newSettings = {
+      ...settings,
       [key]: value
-    }));
+    };
+    setSettings(newSettings);
+
+    // Auto-save voice profile selection immediately
+    if (key === 'selected_voice_profile') {
+      try {
+        await window.electronAPI.invoke('settings:updateAll', newSettings);
+        console.log('Voice profile selection saved');
+      } catch (error) {
+        console.error('Failed to save voice profile selection:', error);
+      }
+    }
   };
 
   // Voice testing function
-  const testVoice = useCallback(() => {
+  const testVoice = useCallback(async () => {
     if (testingVoice) {
       speechSynthesis.cancel();
       setTestingVoice(false);
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(
-      "Hello! I'm Jasper, your AI learning assistant. How can I help you study today?"
-    );
+    const testText = "Hello! I'm Jasper, your AI learning assistant. How can I help you study today?";
 
-    // Apply voice settings
-    utterance.rate = settings.voice_speed ?? 1.0;
-    utterance.pitch = settings.voice_pitch ?? 1.0;
-    utterance.volume = settings.voice_volume ?? 1.0;
-
-    // Find selected voice profile or use default system voice
+    // Find selected voice profile
     const selectedProfile = settings.voice_profiles?.find(
       p => p.id === settings.selected_voice_profile
     );
+
+    // Debug logging
+    console.log('[testVoice] Selected profile ID:', settings.selected_voice_profile);
+    console.log('[testVoice] Found profile:', selectedProfile);
+    console.log('[testVoice] Profile type:', selectedProfile?.type);
+    console.log('[testVoice] OpenVoice profile ID:', selectedProfile?.openvoiceProfileId);
+    console.log('[testVoice] Training status:', selectedProfile?.trainingStatus);
+    console.log('[testVoice] OpenVoice service running:', openVoice.status.running);
+
+    // Check if it's a custom voice with OpenVoice
+    if (selectedProfile?.type === 'custom' && selectedProfile.openvoiceProfileId && selectedProfile.trainingStatus === 'ready') {
+      // Use OpenVoice synthesis for custom voices
+      setTestingVoice(true);
+      try {
+        // synthesize() expects a SynthesizeRequest object and returns the audio path directly
+        const audioPath = await openVoice.synthesize({
+          text: testText,
+          profile_id: selectedProfile.openvoiceProfileId,
+          language: 'EN',
+          speed: settings.voice_speed ?? 1.0
+        });
+
+        console.log('[testVoice] OpenVoice synthesis result - audioPath:', audioPath);
+
+        if (audioPath) {
+          // Play the generated audio
+          const audio = new Audio(`file://${audioPath}`);
+          audio.volume = settings.voice_volume ?? 1.0;
+          audio.onended = () => setTestingVoice(false);
+          audio.onerror = () => {
+            console.error('Failed to play OpenVoice audio');
+            setTestingVoice(false);
+          };
+          await audio.play();
+        } else {
+          console.error('OpenVoice synthesis failed:', openVoice.error);
+          setTestingVoice(false);
+          // Fall back to system voice
+          fallbackToSystemVoice(testText, selectedProfile);
+        }
+      } catch (error) {
+        console.error('OpenVoice synthesis error:', error);
+        setTestingVoice(false);
+        fallbackToSystemVoice(testText, selectedProfile);
+      }
+      return;
+    }
+
+    // Use browser's SpeechSynthesis for system voices
+    const utterance = new SpeechSynthesisUtterance(testText);
+    utterance.rate = settings.voice_speed ?? 1.0;
+    utterance.pitch = settings.voice_pitch ?? 1.0;
+    utterance.volume = settings.voice_volume ?? 1.0;
 
     if (selectedProfile?.type === 'system' && selectedProfile.systemVoice) {
       const voice = systemVoices.find(v => v.name === selectedProfile.systemVoice);
@@ -547,7 +609,26 @@ function App() {
 
     setTestingVoice(true);
     speechSynthesis.speak(utterance);
-  }, [testingVoice, settings, systemVoices]);
+  }, [testingVoice, settings, systemVoices, openVoice]);
+
+  // Helper function to fall back to system voice
+  const fallbackToSystemVoice = (text: string, profile?: VoiceProfile) => {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = settings.voice_speed ?? 1.0;
+    utterance.pitch = settings.voice_pitch ?? 1.0;
+    utterance.volume = settings.voice_volume ?? 1.0;
+
+    if (settings.default_system_voice) {
+      const voice = systemVoices.find(v => v.name === settings.default_system_voice);
+      if (voice) utterance.voice = voice;
+    }
+
+    utterance.onend = () => setTestingVoice(false);
+    utterance.onerror = () => setTestingVoice(false);
+
+    setTestingVoice(true);
+    speechSynthesis.speak(utterance);
+  };
 
   // Preview a specific voice
   const previewVoice = useCallback((voiceName: string) => {
@@ -773,7 +854,7 @@ function App() {
     // Delete audio files from disk for custom profiles
     if (profileToDelete?.type === 'custom') {
       try {
-        await window.electronAPI.invoke('voice:deleteProfile', { profileId });
+        await window.electronAPI.invoke('voice:deleteProfile', profileId);
       } catch (error) {
         console.error('Failed to delete profile audio files:', error);
       }
@@ -1278,14 +1359,22 @@ function App() {
                 )
               );
             }}
-            voiceConfig={{
-              selectedVoiceName: settings.voice_profiles?.find(
+            voiceConfig={(() => {
+              const selectedProfile = settings.voice_profiles?.find(
                 p => p.id === settings.selected_voice_profile
-              )?.systemVoice || settings.default_system_voice,
-              rate: settings.voice_rate ?? 1.0,
-              pitch: settings.voice_pitch ?? 1.0,
-              volume: (settings.voice_volume ?? 0.8) * 100,
-            }}
+              );
+              const isCustomVoice = selectedProfile?.type === 'custom' &&
+                                    selectedProfile?.trainingStatus === 'ready' &&
+                                    selectedProfile?.openvoiceProfileId;
+              return {
+                selectedVoiceName: selectedProfile?.systemVoice || settings.default_system_voice,
+                rate: settings.voice_speed ?? 1.0,
+                pitch: settings.voice_pitch ?? 1.0,
+                volume: (settings.voice_volume ?? 0.8) * 100,
+                useOpenVoice: isCustomVoice ? true : false,
+                openVoiceProfileId: isCustomVoice ? selectedProfile?.openvoiceProfileId : undefined,
+              };
+            })()}
           />
         )}
 
@@ -1778,6 +1867,33 @@ function App() {
                 <span className="setting-hint">Highlight words as they are spoken</span>
               </div>
 
+              {/* Voice Type Selector */}
+              <div className="setting-item">
+                <label>Active Voice Type</label>
+                <div className="voice-type-selector">
+                  <button
+                    className={`voice-type-btn ${(settings.voice_type ?? 'system') === 'system' ? 'active' : ''}`}
+                    onClick={() => handleSettingChange('voice_type', 'system')}
+                  >
+                    System Voice
+                  </button>
+                  <button
+                    className={`voice-type-btn ${settings.voice_type === 'custom' ? 'active' : ''}`}
+                    onClick={() => handleSettingChange('voice_type', 'custom')}
+                    disabled={!settings.voice_profiles?.some(p => p.type === 'custom')}
+                    title={!settings.voice_profiles?.some(p => p.type === 'custom') ? 'No custom voice profiles created yet' :
+                           !settings.voice_profiles?.some(p => p.type === 'custom' && p.trainingStatus === 'ready') ? 'Custom profiles are still training' : ''}
+                  >
+                    Custom Voice
+                  </button>
+                </div>
+                <span className="setting-hint">
+                  {settings.voice_type === 'custom'
+                    ? 'Using custom OpenVoice voice cloning'
+                    : 'Using system text-to-speech voice'}
+                </span>
+              </div>
+
               {/* Default Voice Selector - Quick selection without profiles */}
               <div className="setting-item">
                 <label htmlFor="default-voice">Default System Voice</label>
@@ -1894,8 +2010,21 @@ function App() {
                             </button>
                           )}
                           <button
+                            className="edit-profile-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingVoiceProfile(profile);
+                            }}
+                            title="Edit profile"
+                          >
+                            Edit
+                          </button>
+                          <button
                             className="delete-profile-btn"
-                            onClick={() => deleteVoiceProfile(profile.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteVoiceProfile(profile.id);
+                            }}
                             title="Delete profile"
                           >
                             x
@@ -1945,18 +2074,25 @@ function App() {
               <div className="setting-item">
                 <label htmlFor="voice-volume">
                   Volume
-                  <span className="setting-value">{Math.round((settings.voice_volume ?? 1.0) * 100)}%</span>
+                  <span className={`setting-value ${(settings.voice_volume ?? 1.0) > 1.0 ? 'volume-warning' : ''}`}>
+                    {Math.round((settings.voice_volume ?? 1.0) * 100)}%
+                  </span>
                 </label>
                 <input
                   id="voice-volume"
                   type="range"
                   min="0"
-                  max="1"
+                  max="3"
                   step="0.1"
                   value={settings.voice_volume ?? 1.0}
                   onChange={(e) => handleSettingChange('voice_volume', parseFloat(e.target.value))}
+                  className={(settings.voice_volume ?? 1.0) > 1.0 ? 'volume-high' : ''}
                 />
-                <span className="setting-hint">Volume level (0-100%)</span>
+                <span className={`setting-hint ${(settings.voice_volume ?? 1.0) > 1.0 ? 'volume-warning-text' : ''}`}>
+                  {(settings.voice_volume ?? 1.0) > 1.0
+                    ? '[WARNING] High volume may cause hearing damage!'
+                    : 'Volume level (0-300%)'}
+                </span>
               </div>
 
               {/* Test Voice Button */}
@@ -2341,6 +2477,46 @@ function App() {
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* Voice Profile Editor Modal */}
+            {editingVoiceProfile && (
+              <VoiceProfileEditor
+                profile={editingVoiceProfile}
+                onClose={() => setEditingVoiceProfile(null)}
+                onSave={async (updatedProfile, needsRetraining) => {
+                  // Update the profile in settings
+                  const updatedProfiles = settings.voice_profiles?.map(p =>
+                    p.id === updatedProfile.id ? updatedProfile : p
+                  ) || [];
+                  await handleSettingChange('voice_profiles', updatedProfiles);
+
+                  // Trigger retraining if samples changed and it's a custom profile
+                  if (needsRetraining && updatedProfile.type === 'custom' && updatedProfile.openvoiceProfileId) {
+                    // First update the backend profile's audio samples
+                    const audioSamples = updatedProfile.audioSamples || [];
+                    if (audioSamples.length > 0) {
+                      const result = await openVoice.updateProfileSamples(
+                        updatedProfile.openvoiceProfileId,
+                        audioSamples
+                      );
+                      if (result) {
+                        // Now train with the updated samples
+                        await openVoice.trainProfile(updatedProfile.openvoiceProfileId);
+                        // Refresh profiles to get updated training status
+                        await openVoice.refreshProfiles();
+                      } else {
+                        console.error('Failed to update profile samples in backend');
+                      }
+                    }
+                  }
+                }}
+                onRetrain={async (profileId) => {
+                  await openVoice.trainProfile(profileId);
+                }}
+                systemVoices={systemVoices}
+                isLoading={openVoice.isLoading}
+              />
             )}
           </div>
         )}

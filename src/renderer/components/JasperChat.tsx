@@ -81,6 +81,9 @@ interface VoiceConfig {
   rate?: number;
   pitch?: number;
   volume?: number;
+  // OpenVoice custom voice support
+  useOpenVoice?: boolean; // Whether to use OpenVoice TTS instead of system TTS
+  openVoiceProfileId?: string; // OpenVoice profile ID for voice cloning
 }
 
 interface JasperChatProps {
@@ -882,6 +885,8 @@ export function JasperChat({
                                 volume: voiceConfig?.volume ?? 80,
                                 selectedVoiceId: 'default',
                                 selectedVoiceName: voiceConfig?.selectedVoiceName,
+                                useOpenVoice: voiceConfig?.useOpenVoice,
+                                openVoiceProfileId: voiceConfig?.openVoiceProfileId,
                               }}
                             />
                           ) : (
@@ -1122,6 +1127,8 @@ export function JasperChat({
                                   volume: voiceConfig?.volume ?? 80,
                                   selectedVoiceId: 'default',
                                   selectedVoiceName: voiceConfig?.selectedVoiceName,
+                                  useOpenVoice: voiceConfig?.useOpenVoice,
+                                  openVoiceProfileId: voiceConfig?.openVoiceProfileId,
                                 }}
                               />
                             ) : (

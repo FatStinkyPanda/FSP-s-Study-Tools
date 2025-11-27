@@ -2631,6 +2631,59 @@ body {
   color: #ff6464;
 }
 
+/* Edit Profile Button */
+.edit-profile-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.2s ease;
+}
+
+.edit-profile-btn:hover {
+  background: var(--card-hover);
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+/* Voice Type Selector */
+.voice-type-selector {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.voice-type-btn {
+  flex: 1;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 10px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.voice-type-btn:hover:not(:disabled) {
+  background: var(--card-hover);
+  border-color: var(--border-highlight);
+}
+
+.voice-type-btn.active {
+  background: var(--accent-gradient);
+  border-color: var(--accent-primary);
+  color: white;
+}
+
+.voice-type-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Test Voice Button */
 .test-voice-btn {
   background: var(--accent-secondary);
@@ -5408,4 +5461,46 @@ body {
   max-height: 200px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* ==========================================
+   Volume Warning Styles
+   ========================================== */
+
+.volume-warning {
+  color: #ef4444 !important;
+  font-weight: 600;
+  animation: volume-pulse 1s ease-in-out infinite;
+}
+
+.volume-warning-text {
+  color: #ef4444 !important;
+  font-weight: 500;
+}
+
+.volume-high {
+  accent-color: #ef4444;
+}
+
+.volume-high::-webkit-slider-thumb {
+  background: #ef4444;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
+}
+
+.volume-high::-moz-range-thumb {
+  background: #ef4444;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
+}
+
+.volume-high::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, var(--accent-primary) 33.33%, #ef4444 33.33%);
+}
+
+@keyframes volume-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }

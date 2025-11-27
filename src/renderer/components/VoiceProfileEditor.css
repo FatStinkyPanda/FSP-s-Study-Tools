@@ -1,0 +1,571 @@
+/**
+ * VoiceProfileEditor Component Styles
+ */
+
+/* Modal container - using existing modal-overlay base styles */
+.voice-profile-editor-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-highlight);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 560px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+}
+
+.voice-profile-editor-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.voice-profile-editor-modal .modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.voice-profile-editor-modal .modal-close {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.voice-profile-editor-modal .modal-close:hover {
+  background: var(--card-hover);
+  color: var(--text-primary);
+  border-color: var(--border-highlight);
+}
+
+/* Tab Navigation */
+.editor-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 20px;
+  gap: 4px;
+}
+
+.editor-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  padding: 12px 16px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.editor-tab:hover {
+  color: var(--text-primary);
+  background: var(--card-hover);
+}
+
+.editor-tab.active {
+  color: var(--accent-primary);
+  border-bottom-color: var(--accent-primary);
+}
+
+/* Modal Content */
+.voice-profile-editor-modal .modal-content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Error Alert */
+.editor-error {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--error);
+  color: var(--error);
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+}
+
+.editor-error button {
+  background: transparent;
+  border: none;
+  color: var(--error);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.editor-error button:hover {
+  opacity: 1;
+}
+
+/* Editor Section */
+.editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Form Groups */
+.editor-section .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.editor-section .form-group label {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.editor-section .form-group input[type="text"],
+.editor-section .form-group select {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  transition: border-color 0.2s;
+}
+
+.editor-section .form-group input[type="text"]:focus,
+.editor-section .form-group select:focus {
+  outline: none;
+  border-color: var(--input-focus);
+}
+
+/* Training Status Display */
+.training-status-display {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+.training-status-display.ready {
+  color: var(--success);
+  border-color: var(--success);
+  background: rgba(74, 222, 128, 0.1);
+}
+
+.training-status-display.training {
+  color: var(--warning);
+  border-color: var(--warning);
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.training-status-display.pending {
+  color: var(--text-muted);
+}
+
+.training-status-display.failed {
+  color: var(--error);
+  border-color: var(--error);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.training-error-message {
+  color: var(--error);
+  font-size: 0.8rem;
+  margin-top: 4px;
+  padding: 6px 10px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 4px;
+}
+
+/* Samples Summary */
+.samples-summary {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  padding: 8px 12px;
+  background: var(--card-bg);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+/* Retrain Notice */
+.retrain-notice {
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid var(--warning);
+  color: var(--warning);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+/* Created Date */
+.created-date {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* Audio Samples Tab */
+.samples-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.samples-count {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.add-sample-btn {
+  background: var(--accent-gradient);
+  border: none;
+  color: white;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: opacity 0.2s;
+}
+
+.add-sample-btn:hover {
+  opacity: 0.9;
+}
+
+/* No Samples Message */
+.no-samples-message {
+  text-align: center;
+  padding: 30px 20px;
+  color: var(--text-muted);
+  background: var(--card-bg);
+  border-radius: 8px;
+  border: 1px dashed var(--border-color);
+}
+
+.no-samples-message p {
+  margin: 4px 0;
+}
+
+/* Samples List */
+.samples-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.sample-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  transition: border-color 0.2s;
+}
+
+.sample-item:hover {
+  border-color: var(--border-highlight);
+}
+
+.sample-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sample-name {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.sample-duration {
+  color: var(--accent-primary);
+  font-size: 0.8rem;
+}
+
+.sample-date {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.sample-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.play-sample-btn,
+.remove-sample-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.2s;
+}
+
+.play-sample-btn:hover {
+  background: var(--card-hover);
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.remove-sample-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+  border-color: var(--error);
+}
+
+/* Samples Hint */
+.samples-hint {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-top: 8px;
+}
+
+.samples-hint p {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin: 0 0 8px 0;
+}
+
+.samples-hint ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.samples-hint li {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 4px 0;
+}
+
+/* Recording Tab */
+.recording-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  gap: 20px;
+}
+
+.recording-timer {
+  font-size: 3rem;
+  font-weight: 300;
+  color: var(--text-primary);
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.recording-indicator {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  transition: all 0.3s;
+}
+
+.recording-indicator.active {
+  color: var(--error);
+  border-color: var(--error);
+  background: rgba(239, 68, 68, 0.1);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.recording-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.record-btn {
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.record-btn.start {
+  background: var(--error);
+  color: white;
+}
+
+.record-btn.start:hover {
+  background: #dc2626;
+}
+
+.record-btn.stop {
+  background: var(--text-muted);
+  color: white;
+}
+
+.record-btn.stop:hover {
+  background: #666;
+}
+
+.record-btn.preview {
+  background: var(--info);
+  color: white;
+}
+
+.record-btn.preview:hover {
+  background: #2563eb;
+}
+
+.record-btn.discard {
+  background: transparent;
+  border: 1px solid var(--border-highlight);
+  color: var(--text-secondary);
+}
+
+.record-btn.discard:hover {
+  background: var(--card-hover);
+  color: var(--text-primary);
+}
+
+.record-btn.save {
+  background: var(--success);
+  color: white;
+}
+
+.record-btn.save:hover {
+  background: #22c55e;
+}
+
+.recording-hint {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+/* Modal Footer */
+.voice-profile-editor-modal .modal-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-color);
+}
+
+.footer-spacer {
+  flex: 1;
+}
+
+.retrain-btn {
+  background: var(--warning);
+  border: none;
+  color: #000;
+  padding: 10px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: opacity 0.2s;
+}
+
+.retrain-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.retrain-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cancel-btn {
+  background: transparent;
+  border: 1px solid var(--border-highlight);
+  color: var(--text-secondary);
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.cancel-btn:hover {
+  background: var(--card-hover);
+  color: var(--text-primary);
+}
+
+.save-btn {
+  background: var(--accent-gradient);
+  border: none;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: opacity 0.2s;
+}
+
+.save-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .voice-profile-editor-modal {
+    width: 95%;
+    max-height: 90vh;
+  }
+
+  .editor-tabs {
+    padding: 0 12px;
+  }
+
+  .editor-tab {
+    padding: 10px 12px;
+    font-size: 0.85rem;
+  }
+
+  .voice-profile-editor-modal .modal-content {
+    padding: 16px;
+  }
+
+  .recording-timer {
+    font-size: 2.5rem;
+  }
+
+  .record-btn {
+    padding: 10px 18px;
+    font-size: 0.9rem;
+  }
+}

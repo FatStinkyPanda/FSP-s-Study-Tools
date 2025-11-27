@@ -1,6 +1,33 @@
 import { DatabaseManager } from '../database/DatabaseManager';
 import { SecureStorage } from '../security';
 
+// Voice Profile interface (matching shared/voice-types.ts)
+export interface VoiceProfile {
+  id: string;
+  name: string;
+  type: 'system' | 'custom';
+  systemVoice?: string;
+  gender?: 'male' | 'female' | 'neutral';
+  accent?: string;
+  language?: string;
+  modelPath?: string;
+  openvoiceProfileId?: string;
+  audioSamplePath?: string;
+  trainingSamples?: Array<{
+    id: string;
+    name: string;
+    path?: string;
+    duration: number;
+    scriptId?: number;
+    createdAt: string;
+  }>;
+  trainingStatus?: 'pending' | 'training' | 'ready' | 'failed';
+  trainingProgress?: number;
+  trainingError?: string;
+  created?: string;
+  createdAt?: Date;
+}
+
 export interface AppSettings {
   // AI Provider API Keys
   openai_api_key?: string;
@@ -49,6 +76,14 @@ export interface AppSettings {
   questions_per_session?: number;
   show_explanations?: boolean;
   shuffle_questions?: boolean;
+
+  // Voice Settings
+  voice_profiles?: VoiceProfile[];
+  selected_voice_profile?: string;
+  default_system_voice?: string;
+  voice_speed?: number;
+  voice_pitch?: number;
+  voice_volume?: number;
 }
 
 export interface SettingRow {
@@ -243,6 +278,17 @@ export class SettingsManager {
     settings.show_explanations = this.getBoolean('show_explanations');
     settings.shuffle_questions = this.getBoolean('shuffle_questions');
 
+    // Voice Settings
+    settings.voice_profiles = this.get<VoiceProfile[]>('voice_profiles') || [];
+    settings.selected_voice_profile = this.getString('selected_voice_profile');
+    settings.default_system_voice = this.getString('default_system_voice');
+    settings.voice_speed = this.getNumber('voice_speed') || 1.0;
+    settings.voice_pitch = this.getNumber('voice_pitch') || 1.0;
+    settings.voice_volume = this.getNumber('voice_volume') || 1.0;
+
+    console.log('[SettingsManager.getAll] voice_profiles:', settings.voice_profiles?.length || 0, 'profiles');
+    console.log('[SettingsManager.getAll] selected_voice_profile:', settings.selected_voice_profile);
+
     return settings;
   }
 
@@ -358,6 +404,29 @@ export class SettingsManager {
     }
     if (settings.shuffle_questions !== undefined) {
       this.set('shuffle_questions', settings.shuffle_questions);
+    }
+
+    // Voice Settings
+    if (settings.voice_profiles !== undefined) {
+      console.log('[SettingsManager.updateAll] Saving voice_profiles:', settings.voice_profiles?.length || 0, 'profiles');
+      console.log('[SettingsManager.updateAll] Voice profiles data:', JSON.stringify(settings.voice_profiles, null, 2));
+      this.set('voice_profiles', settings.voice_profiles);
+    }
+    if (settings.selected_voice_profile !== undefined) {
+      console.log('[SettingsManager.updateAll] Saving selected_voice_profile:', settings.selected_voice_profile);
+      this.set('selected_voice_profile', settings.selected_voice_profile);
+    }
+    if (settings.default_system_voice !== undefined) {
+      this.set('default_system_voice', settings.default_system_voice);
+    }
+    if (settings.voice_speed !== undefined) {
+      this.set('voice_speed', settings.voice_speed);
+    }
+    if (settings.voice_pitch !== undefined) {
+      this.set('voice_pitch', settings.voice_pitch);
+    }
+    if (settings.voice_volume !== undefined) {
+      this.set('voice_volume', settings.voice_volume);
     }
   }
 

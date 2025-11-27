@@ -51,6 +51,7 @@ export interface UseOpenVoiceResult {
   createProfile: (name: string, audioSamples: string[]) => Promise<OpenVoiceProfile | null>;
   deleteProfile: (profileId: string) => Promise<boolean>;
   trainProfile: (profileId: string) => Promise<boolean>;
+  updateProfileSamples: (profileId: string, audioSamples: string[]) => Promise<OpenVoiceProfile | null>;
 
   // TTS Synthesis
   synthesize: (request: SynthesizeRequest) => Promise<string | null>;
@@ -225,6 +226,29 @@ export function useOpenVoice(): UseOpenVoiceResult {
     }
   }, []);
 
+  const updateProfileSamples = useCallback(async (profileId: string, audioSamples: string[]): Promise<OpenVoiceProfile | null> => {
+    setError(null);
+    try {
+      const result = await window.electronAPI.invoke('openvoice:updateProfileSamples', profileId, audioSamples) as {
+        success: boolean;
+        profile?: OpenVoiceProfile;
+        error?: string;
+      };
+      if (result.success && result.profile) {
+        // Update local profiles state
+        setProfiles(prev => prev.map(p => p.id === profileId ? result.profile! : p));
+        return result.profile;
+      }
+      if (result.error) {
+        setError(result.error);
+      }
+      return null;
+    } catch (err) {
+      setError((err as Error).message);
+      return null;
+    }
+  }, []);
+
   const synthesize = useCallback(async (request: SynthesizeRequest): Promise<string | null> => {
     setIsLoading(true);
     setError(null);
@@ -301,6 +325,7 @@ export function useOpenVoice(): UseOpenVoiceResult {
     createProfile,
     deleteProfile,
     trainProfile,
+    updateProfileSamples,
     synthesize,
     synthesizeToFile,
     checkpointsReady: status.checkpointsReady,

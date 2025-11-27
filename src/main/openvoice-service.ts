@@ -94,6 +94,10 @@ class OpenVoiceServiceManager {
       return this.trainProfile(profileId);
     });
 
+    ipcMain.handle('openvoice:updateProfileSamples', async (_event, profileId: string, audioSamples: string[]) => {
+      return this.updateProfileSamples(profileId, audioSamples);
+    });
+
     // TTS Synthesis
     ipcMain.handle('openvoice:synthesize', async (_event, request: SynthesizeRequest) => {
       return this.synthesize(request);
@@ -101,6 +105,11 @@ class OpenVoiceServiceManager {
 
     ipcMain.handle('openvoice:synthesizeToFile', async (_event, request: SynthesizeRequest) => {
       return this.synthesizeToFile(request);
+    });
+
+    // Long text synthesis (chunked)
+    ipcMain.handle('openvoice:synthesizeLong', async (_event, request: SynthesizeRequest) => {
+      return this.synthesizeLong(request);
     });
 
     // Checkpoints management
@@ -116,7 +125,8 @@ class OpenVoiceServiceManager {
   private async makeRequest(
     method: string,
     endpoint: string,
-    body?: object
+    body?: object,
+    timeoutMs: number = 60000
   ): Promise<{ success: boolean; data?: any; error?: string }> {
     return new Promise((resolve) => {
       const url = new URL(endpoint, SERVICE_URL);
@@ -151,7 +161,7 @@ class OpenVoiceServiceManager {
         resolve({ success: false, error: error.message });
       });
 
-      req.setTimeout(60000, () => {
+      req.setTimeout(timeoutMs, () => {
         req.destroy();
         resolve({ success: false, error: 'Request timeout' });
       });
@@ -336,13 +346,27 @@ class OpenVoiceServiceManager {
     return result;
   }
 
+  async updateProfileSamples(
+    profileId: string,
+    audioSamples: string[]
+  ): Promise<{ success: boolean; profile?: OpenVoiceProfile; error?: string }> {
+    const result = await this.makeRequest('PUT', `/profiles/${profileId}/samples`, {
+      audio_samples: audioSamples,
+    });
+    if (result.success) {
+      return { success: true, profile: result.data };
+    }
+    return { success: false, error: result.error };
+  }
+
   async synthesize(request: SynthesizeRequest): Promise<{ success: boolean; audioPath?: string; error?: string }> {
+    // Use 3-minute timeout for synthesis (first synthesis may need to download/load BERT model which takes ~75s)
     const result = await this.makeRequest('POST', '/synthesize', {
       text: request.text,
       profile_id: request.profile_id,
       language: request.language || 'EN',
       speed: request.speed || 1.0,
-    });
+    }, 180000);
 
     if (result.success) {
       return { success: true, audioPath: result.data?.audio_path };
@@ -353,6 +377,22 @@ class OpenVoiceServiceManager {
   async synthesizeToFile(request: SynthesizeRequest): Promise<{ success: boolean; audioPath?: string; error?: string }> {
     // Same as synthesize, but returns the file path
     return this.synthesize(request);
+  }
+
+  async synthesizeLong(request: SynthesizeRequest): Promise<{ success: boolean; audioPath?: string; error?: string }> {
+    // Use the /synthesize/long endpoint for chunked synthesis of long texts
+    // Increased timeout (5 minutes) for longer texts that require chunked processing
+    const result = await this.makeRequest('POST', '/synthesize/long', {
+      text: request.text,
+      profile_id: request.profile_id,
+      language: request.language || 'EN',
+      speed: request.speed || 1.0,
+    }, 300000);
+
+    if (result.success) {
+      return { success: true, audioPath: result.data?.audio_path };
+    }
+    return { success: false, error: result.error };
   }
 
   async checkpointsStatus(): Promise<{ ready: boolean; checkpoints_dir?: string; error?: string }> {

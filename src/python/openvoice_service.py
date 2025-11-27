@@ -28,11 +28,19 @@ import shutil
 import logging
 import threading
 import traceback
+import warnings
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, List, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
+
+# Suppress FutureWarning for torch.load weights_only parameter
+# These warnings are for models we trust (our own checkpoints)
+warnings.filterwarnings('ignore', category=FutureWarning, message='.*torch.load.*weights_only.*')
+warnings.filterwarnings('ignore', category=FutureWarning, message='.*torch.nn.utils.weight_norm.*')
+warnings.filterwarnings('ignore', category=UserWarning, message='.*stft with return_complex=False.*')
 
 # Flask imports
 from flask import Flask, request, jsonify, send_file
@@ -47,6 +55,45 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('OpenVoiceService')
+
+
+def sanitize_text_for_tts(text: str) -> str:
+    """
+    Remove emojis and other non-ASCII characters that can't be handled by TTS.
+    MeloTTS library has issues with Windows cp1252 encoding when printing text
+    containing emojis, causing UnicodeEncodeError.
+    """
+    # Remove emojis and other Unicode characters outside basic multilingual plane
+    # This regex removes most emojis and special symbols
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F700-\U0001F77F"  # alchemical symbols
+        "\U0001F780-\U0001F7FF"  # Geometric Shapes Extended
+        "\U0001F800-\U0001F8FF"  # Supplemental Arrows-C
+        "\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
+        "\U0001FA00-\U0001FA6F"  # Chess Symbols
+        "\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
+        "\U00002702-\U000027B0"  # Dingbats
+        "\U000024C2-\U0001F251"
+        "]+",
+        flags=re.UNICODE
+    )
+
+    # Replace emojis with empty string
+    cleaned = emoji_pattern.sub('', text)
+
+    # Also try to encode to cp1252 and replace any remaining problematic chars
+    try:
+        # Test if the string can be encoded in cp1252 (Windows default)
+        cleaned.encode('cp1252')
+    except UnicodeEncodeError:
+        # Replace any remaining non-cp1252 characters with spaces
+        cleaned = cleaned.encode('cp1252', errors='replace').decode('cp1252')
+
+    return cleaned
 
 # Global state
 app = Flask(__name__)
@@ -429,6 +476,36 @@ training_queue = TrainingQueue()
 class TTSSynthesizer:
     """Text-to-speech synthesis with voice cloning"""
 
+    # Maximum characters per chunk to avoid memory issues
+    MAX_CHUNK_CHARS = 500
+
+    def _split_into_sentences(self, text: str) -> List[str]:
+        """Split text into sentences for chunked processing"""
+        import re
+        # Split on sentence-ending punctuation followed by space or end
+        sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+        return [s.strip() for s in sentences if s.strip()]
+
+    def _chunk_text(self, text: str) -> List[str]:
+        """Split text into manageable chunks while preserving sentence boundaries"""
+        sentences = self._split_into_sentences(text)
+        chunks = []
+        current_chunk = ""
+
+        for sentence in sentences:
+            # If adding this sentence would exceed max, start new chunk
+            if len(current_chunk) + len(sentence) + 1 > self.MAX_CHUNK_CHARS and current_chunk:
+                chunks.append(current_chunk.strip())
+                current_chunk = sentence
+            else:
+                current_chunk = f"{current_chunk} {sentence}".strip() if current_chunk else sentence
+
+        # Don't forget the last chunk
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+
+        return chunks if chunks else [text]
+
     def synthesize(
         self,
         text: str,
@@ -483,7 +560,10 @@ class TTSSynthesizer:
             speaker_key = list(speaker_ids.keys())[0]  # Use first speaker
             speaker_id = speaker_ids[speaker_key]
 
-            tts_model.tts_to_file(text, speaker_id, str(temp_path), speed=speed)
+            # Sanitize text to remove emojis and problematic characters
+            # MeloTTS library has issues with Windows cp1252 encoding
+            sanitized_text = sanitize_text_for_tts(text)
+            tts_model.tts_to_file(sanitized_text, speaker_id, str(temp_path), speed=speed)
 
             # Get source speaker embedding
             base_speaker_key = speaker_key.lower().replace('_', '-')
@@ -510,6 +590,91 @@ class TTSSynthesizer:
 
         except Exception as e:
             logger.error(f"TTS synthesis failed: {e}")
+            logger.error(traceback.format_exc())
+            return None
+
+    def synthesize_long(
+        self,
+        text: str,
+        profile_id: str,
+        language: str = 'EN',
+        speed: float = 1.0
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Synthesize long text with automatic chunking and concatenation.
+
+        Returns dict with:
+            - audio_path: Path to final concatenated audio
+            - duration: Total duration in seconds
+            - chunks: Number of chunks processed
+        """
+        from pydub import AudioSegment
+
+        try:
+            # Split text into chunks
+            chunks = self._chunk_text(text)
+            logger.info(f"Synthesizing {len(chunks)} chunks for long text ({len(text)} chars)")
+
+            if len(chunks) == 1:
+                # Single chunk - use regular synthesis
+                audio_path = self.synthesize(text, profile_id, language, speed)
+                if audio_path:
+                    audio = AudioSegment.from_wav(audio_path)
+                    return {
+                        'audio_path': audio_path,
+                        'duration': len(audio) / 1000.0,
+                        'chunks': 1
+                    }
+                return None
+
+            # Multiple chunks - synthesize each and concatenate
+            audio_segments = []
+            temp_files = []
+
+            for i, chunk in enumerate(chunks):
+                logger.info(f"Synthesizing chunk {i+1}/{len(chunks)}: {len(chunk)} chars")
+                chunk_path = self.synthesize(chunk, profile_id, language, speed)
+
+                if not chunk_path:
+                    logger.warning(f"Failed to synthesize chunk {i+1}, skipping")
+                    continue
+
+                temp_files.append(chunk_path)
+                segment = AudioSegment.from_wav(chunk_path)
+                audio_segments.append(segment)
+
+                # Add small pause between chunks for natural flow
+                silence = AudioSegment.silent(duration=200)  # 200ms
+                audio_segments.append(silence)
+
+            if not audio_segments:
+                raise Exception("All chunks failed to synthesize")
+
+            # Concatenate all segments
+            combined = audio_segments[0]
+            for segment in audio_segments[1:]:
+                combined += segment
+
+            # Export combined audio
+            output_id = uuid.uuid4().hex[:8]
+            output_path = config.output_dir / f'combined_{output_id}.wav'
+            combined.export(str(output_path), format='wav')
+
+            # Cleanup temp files
+            for temp_file in temp_files:
+                try:
+                    os.remove(temp_file)
+                except:
+                    pass
+
+            return {
+                'audio_path': str(output_path),
+                'duration': len(combined) / 1000.0,
+                'chunks': len(chunks)
+            }
+
+        except Exception as e:
+            logger.error(f"Long text synthesis failed: {e}")
             logger.error(traceback.format_exc())
             return None
 
@@ -581,6 +746,30 @@ def delete_profile(profile_id: str):
         return jsonify({'error': 'Profile not found'}), 404
     return jsonify({'success': True})
 
+@app.route('/profiles/<profile_id>/samples', methods=['PUT'])
+def update_profile_samples(profile_id: str):
+    """Update audio samples for a voice profile"""
+    profile = profile_store.get_profile(profile_id)
+    if not profile:
+        return jsonify({'error': 'Profile not found'}), 404
+
+    data = request.json
+    audio_samples = data.get('audio_samples', [])
+
+    if not audio_samples:
+        return jsonify({'error': 'At least one audio sample is required'}), 400
+
+    # Verify audio files exist
+    for path in audio_samples:
+        if not os.path.exists(path):
+            return jsonify({'error': f'Audio file not found: {path}'}), 400
+
+    # Update the profile
+    updated = profile_store.update_profile(profile_id, audio_samples=audio_samples, state='pending', progress=0)
+    if updated:
+        return jsonify(asdict(updated))
+    return jsonify({'error': 'Failed to update profile'}), 500
+
 @app.route('/profiles/<profile_id>/train', methods=['POST'])
 def train_profile(profile_id: str):
     """Start training a voice profile"""
@@ -617,6 +806,33 @@ def synthesize():
     return jsonify({
         'success': True,
         'audio_path': output_path
+    })
+
+@app.route('/synthesize/long', methods=['POST'])
+def synthesize_long():
+    """Synthesize long text with automatic chunking"""
+    data = request.json
+    text = data.get('text')
+    profile_id = data.get('profile_id')
+    language = data.get('language', 'EN')
+    speed = data.get('speed', 1.0)
+
+    if not text:
+        return jsonify({'error': 'Text is required'}), 400
+
+    if not profile_id:
+        return jsonify({'error': 'Profile ID is required'}), 400
+
+    result = tts_synthesizer.synthesize_long(text, profile_id, language, speed)
+
+    if not result:
+        return jsonify({'error': 'Synthesis failed'}), 500
+
+    return jsonify({
+        'success': True,
+        'audio_path': result['audio_path'],
+        'duration': result['duration'],
+        'chunks': result['chunks']
     })
 
 @app.route('/synthesize/stream', methods=['POST'])

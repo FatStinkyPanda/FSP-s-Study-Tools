@@ -904,11 +904,68 @@ export class PDFParser implements IParser {
   }
 
   /**
+   * Detect and fix character-spaced text (e.g., "A + C o r e" -> "A+ Core")
+   * This is a common issue with PDF extraction where fonts embed characters individually
+   */
+  private fixCharacterSpacing(text: string): string {
+    // Pattern: single character followed by space followed by single character
+    // This detects sequences like "A + C o r e 1 a n d C o r e 2"
+
+    // Count ratio of single-char "words" to detect the problem
+    const words = text.split(/\s+/);
+    const singleCharWords = words.filter(w => w.length === 1 && /[a-zA-Z0-9]/.test(w)).length;
+    const totalWords = words.length;
+
+    // If more than 40% of words are single characters, likely has spacing issue
+    if (totalWords > 5 && singleCharWords / totalWords > 0.4) {
+      // Remove spaces between single characters while preserving real word boundaries
+      // Strategy: Join characters that are separated by single spaces, keep multi-spaces as word breaks
+      let result = '';
+      let i = 0;
+
+      while (i < text.length) {
+        const char = text[i];
+        const nextChar = text[i + 1];
+        const afterNext = text[i + 2];
+
+        result += char;
+
+        // If current is a letter/digit, next is space, and after is letter/digit
+        // Check if this looks like character spacing vs real word boundary
+        if (/[a-zA-Z0-9]/.test(char) && nextChar === ' ' && /[a-zA-Z0-9]/.test(afterNext || '')) {
+          // Look ahead to see if this is really character spacing
+          // Real word boundaries usually have longer sequences after the space
+          let lookAhead = '';
+          let j = i + 2;
+          while (j < text.length && text[j] !== ' ') {
+            lookAhead += text[j];
+            j++;
+          }
+
+          // If the next "word" is just 1 char, likely spacing issue - skip the space
+          if (lookAhead.length === 1) {
+            i++; // Skip the space
+          }
+        }
+        i++;
+      }
+
+      // Clean up any remaining artifacts
+      return result.replace(/\s{2,}/g, ' ').trim();
+    }
+
+    return text;
+  }
+
+  /**
    * Clean up paragraph content
    */
   private cleanParagraphContent(content: string): string {
+    // First try to fix character spacing issues
+    let cleaned = this.fixCharacterSpacing(content);
+
     // Remove excessive whitespace
-    let cleaned = content.replace(/\s+/g, ' ').trim();
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
 
     // Fix common PDF extraction issues
     // - Fix missing spaces after periods

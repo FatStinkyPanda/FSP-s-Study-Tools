@@ -19,10 +19,12 @@ export interface VoiceProfile {
   accent?: string;
   language?: string;
   modelPath?: string; // For custom trained voices
+  openvoiceProfileId?: string; // OpenVoice backend profile ID for voice cloning
   audioSamplePath?: string; // Legacy: single audio sample path
   trainingSamples?: VoiceTrainingSample[]; // Multiple audio samples for training
   trainingStatus?: 'pending' | 'training' | 'ready' | 'failed';
   trainingProgress?: number; // 0-100 percentage during training
+  trainingError?: string; // Error message if training failed
   created?: string; // ISO date string
   createdAt?: Date;
 }
@@ -31,7 +33,7 @@ export interface VoiceSettings {
   selectedVoiceId: string;
   rate: number; // 0.5 - 2.0, default 1.0
   pitch: number; // -50 to +50, default 0
-  volume: number; // 0 - 100, default 80
+  volume: number; // 0 - 300, default 80 (above 100 triggers loudness warning)
   emotionalTone: 'neutral' | 'encouraging' | 'serious';
 }
 
