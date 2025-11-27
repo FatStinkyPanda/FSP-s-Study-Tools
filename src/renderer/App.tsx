@@ -395,11 +395,31 @@ function App() {
     };
   }, []);
 
+  // Load OpenVoice profiles when service is running and we have custom voice profiles
+  useEffect(() => {
+    const loadProfiles = async () => {
+      // Only refresh if service is running and we have custom voice profiles
+      if (openVoice.status.running && settings.voice_profiles?.some(p => p.type === 'custom' && p.openvoiceProfileId)) {
+        console.log('[App] OpenVoice service running, refreshing profiles...');
+        await openVoice.refreshProfiles();
+      }
+    };
+    loadProfiles();
+  }, [openVoice.status.running, settings.voice_profiles, openVoice.refreshProfiles]);
+
   // Sync OpenVoice training updates with local voice profiles
   useEffect(() => {
     // Listen for OpenVoice training updates via the hook's profiles
     const syncTrainingStatus = () => {
-      if (!settings.voice_profiles || openVoice.profiles.length === 0) return;
+      console.log('[syncTrainingStatus] Running sync...', {
+        voiceProfilesCount: settings.voice_profiles?.length || 0,
+        ovProfilesCount: openVoice.profiles.length
+      });
+
+      if (!settings.voice_profiles || openVoice.profiles.length === 0) {
+        console.log('[syncTrainingStatus] Early return - no profiles to sync');
+        return;
+      }
 
       let hasChanges = false;
       const updatedProfiles = settings.voice_profiles.map(profile => {
@@ -407,6 +427,10 @@ function App() {
 
         // Find matching OpenVoice profile
         const ovProfile = openVoice.profiles.find(p => p.id === profile.openvoiceProfileId);
+        console.log('[syncTrainingStatus] Matching profile:', {
+          localId: profile.openvoiceProfileId,
+          ovProfile: ovProfile ? { id: ovProfile.id, state: ovProfile.state } : 'not found'
+        });
         if (!ovProfile) return profile;
 
         // Map OpenVoice state to local training status
@@ -434,6 +458,12 @@ function App() {
           newProgress !== profile.trainingProgress ||
           newError !== profile.trainingError
         ) {
+          console.log('[syncTrainingStatus] Status changed:', {
+            profileId: profile.id,
+            oldStatus: profile.trainingStatus,
+            newStatus,
+            ovState: ovProfile.state
+          });
           hasChanges = true;
           return {
             ...profile,
@@ -446,6 +476,7 @@ function App() {
       });
 
       if (hasChanges) {
+        console.log('[syncTrainingStatus] Updating settings with new profiles');
         setSettings(prev => ({
           ...prev,
           voice_profiles: updatedProfiles,

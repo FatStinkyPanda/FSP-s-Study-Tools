@@ -81,7 +81,17 @@ export function useOpenVoice(): UseOpenVoiceResult {
 
     // Also subscribe to training updates
     const trainingCleanup = window.electronAPI.onOpenVoiceTrainingUpdate((profile) => {
-      setProfiles(prev => prev.map(p => p.id === profile.id ? profile : p));
+      console.log('[useOpenVoice] Training update received:', profile.id, profile.state);
+      setProfiles(prev => {
+        const existing = prev.find(p => p.id === profile.id);
+        if (existing) {
+          // Update existing profile
+          return prev.map(p => p.id === profile.id ? profile : p);
+        } else {
+          // Add new profile if not found
+          return [...prev, profile];
+        }
+      });
     });
 
     return () => {
