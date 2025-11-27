@@ -18,6 +18,9 @@ export interface VoiceSettings {
   pitch: number;
   volume: number;
   selectedVoiceId: string;
+  selectedVoiceName?: string; // The system voice name to use (from SpeechSynthesisVoice.name)
+  openVoiceProfileId?: string; // Optional OpenVoice profile ID for voice cloning
+  useOpenVoice?: boolean; // Whether to use OpenVoice TTS instead of system TTS
 }
 
 interface SyncedTextReaderProps {
@@ -77,6 +80,12 @@ export function SyncedTextReader({
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const wordBoundaryIndexRef = useRef<number>(0);
 
+  // OpenVoice audio playback
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const wordTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [isOpenVoiceLoading, setIsOpenVoiceLoading] = useState(false);
+  const [openVoiceError, setOpenVoiceError] = useState<string | null>(null);
+
   // Parse text into words
   useEffect(() => {
     const parsedWords = text.split(/\s+/).filter((w) => w.length > 0);
@@ -90,6 +99,17 @@ export function SyncedTextReader({
     const loadVoices = () => {
       const voices = window.speechSynthesis.getVoices();
       setAvailableVoices(voices);
+
+      // If a specific voice name is provided, try to use that
+      if (voiceSettings.selectedVoiceName && voices.length > 0) {
+        const specifiedVoice = voices.find(v => v.name === voiceSettings.selectedVoiceName);
+        if (specifiedVoice) {
+          setSelectedVoice(specifiedVoice);
+          return;
+        }
+      }
+
+      // Otherwise, auto-select if no voice selected yet
       if (voices.length > 0 && !selectedVoice) {
         // Prefer English voices
         const englishVoice = voices.find((v) => v.lang.startsWith('en-'));
@@ -103,7 +123,7 @@ export function SyncedTextReader({
     return () => {
       window.speechSynthesis.onvoiceschanged = null;
     };
-  }, [selectedVoice]);
+  }, [selectedVoice, voiceSettings.selectedVoiceName]);
 
   // Auto-scroll to current word
   useEffect(() => {
@@ -128,7 +148,94 @@ export function SyncedTextReader({
     }
   }, [autoPlay, words.length]);
 
-  const speak = useCallback(() => {
+  // OpenVoice TTS synthesis function
+  const speakWithOpenVoice = useCallback(async () => {
+    if (!voiceSettings.openVoiceProfileId || words.length === 0) return;
+
+    setIsOpenVoiceLoading(true);
+    setOpenVoiceError(null);
+
+    try {
+      // Request synthesis from OpenVoice backend
+      const result = await window.electronAPI.invoke('openvoice:synthesize', {
+        text,
+        profile_id: voiceSettings.openVoiceProfileId,
+        language: 'EN',
+        speed: voiceSettings.rate,
+      }) as { success: boolean; audioPath?: string; error?: string };
+
+      if (!result.success || !result.audioPath) {
+        throw new Error(result.error || 'OpenVoice synthesis failed');
+      }
+
+      // Create audio element to play the file
+      const audio = new Audio(`file://${result.audioPath}`);
+      audio.volume = voiceSettings.volume / 100;
+      audioRef.current = audio;
+
+      // Estimate word timing based on audio duration and word count
+      audio.onloadedmetadata = () => {
+        const totalDuration = audio.duration * 1000; // Convert to ms
+        const wordDuration = totalDuration / words.length;
+
+        audio.onplay = () => {
+          setIsSpeaking(true);
+          setIsPaused(false);
+          setCurrentWordIndex(0);
+          onSpeakingStart?.();
+
+          // Start word timer
+          let wordIndex = 0;
+          const advanceWord = () => {
+            if (wordIndex < words.length - 1) {
+              wordIndex++;
+              setCurrentWordIndex(wordIndex);
+              if (onWordChange && words[wordIndex]) {
+                onWordChange(wordIndex, words[wordIndex]);
+              }
+              wordTimerRef.current = setTimeout(advanceWord, wordDuration);
+            }
+          };
+          wordTimerRef.current = setTimeout(advanceWord, wordDuration);
+        };
+
+        audio.onpause = () => {
+          if (wordTimerRef.current) {
+            clearTimeout(wordTimerRef.current);
+            wordTimerRef.current = null;
+          }
+          setIsPaused(true);
+        };
+
+        audio.onended = () => {
+          if (wordTimerRef.current) {
+            clearTimeout(wordTimerRef.current);
+            wordTimerRef.current = null;
+          }
+          setIsSpeaking(false);
+          setIsPaused(false);
+          setCurrentWordIndex(-1);
+          onSpeakingEnd?.();
+          audioRef.current = null;
+        };
+
+        audio.play().catch((err) => {
+          console.error('Audio playback error:', err);
+          setOpenVoiceError('Failed to play audio');
+          setIsOpenVoiceLoading(false);
+        });
+      };
+
+      setIsOpenVoiceLoading(false);
+    } catch (err) {
+      console.error('OpenVoice synthesis error:', err);
+      setOpenVoiceError((err as Error).message);
+      setIsOpenVoiceLoading(false);
+    }
+  }, [text, words, voiceSettings, onWordChange, onSpeakingStart, onSpeakingEnd]);
+
+  // Standard Web Speech API TTS function
+  const speakWithWebSpeech = useCallback(() => {
     if (!window.speechSynthesis || words.length === 0) return;
 
     // Cancel any ongoing speech
@@ -189,7 +296,24 @@ export function SyncedTextReader({
     window.speechSynthesis.speak(utterance);
   }, [text, words, voiceSettings, selectedVoice, onWordChange, onSpeakingStart, onSpeakingEnd]);
 
+  // Main speak function - routes to OpenVoice or Web Speech API
+  const speak = useCallback(() => {
+    // Check if OpenVoice should be used
+    if (voiceSettings.useOpenVoice && voiceSettings.openVoiceProfileId) {
+      speakWithOpenVoice();
+    } else {
+      speakWithWebSpeech();
+    }
+  }, [voiceSettings.useOpenVoice, voiceSettings.openVoiceProfileId, speakWithOpenVoice, speakWithWebSpeech]);
+
   const pause = useCallback(() => {
+    // Handle OpenVoice audio
+    if (audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause();
+      setIsPaused(true);
+      return;
+    }
+    // Handle Web Speech API
     if (window.speechSynthesis.speaking) {
       window.speechSynthesis.pause();
       setIsPaused(true);
@@ -197,6 +321,13 @@ export function SyncedTextReader({
   }, []);
 
   const resume = useCallback(() => {
+    // Handle OpenVoice audio
+    if (audioRef.current && audioRef.current.paused) {
+      audioRef.current.play();
+      setIsPaused(false);
+      return;
+    }
+    // Handle Web Speech API
     if (window.speechSynthesis.paused) {
       window.speechSynthesis.resume();
       setIsPaused(false);
@@ -204,6 +335,17 @@ export function SyncedTextReader({
   }, []);
 
   const stop = useCallback(() => {
+    // Handle OpenVoice audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+    if (wordTimerRef.current) {
+      clearTimeout(wordTimerRef.current);
+      wordTimerRef.current = null;
+    }
+    // Handle Web Speech API
     window.speechSynthesis.cancel();
     setIsSpeaking(false);
     setIsPaused(false);
@@ -269,7 +411,9 @@ export function SyncedTextReader({
       {showControls && (
         <div className="synced-text-controls">
           <div className="synced-text-controls-left">
-            {!isSpeaking ? (
+            {isOpenVoiceLoading ? (
+              <span className="synced-control-loading">[Loading...]</span>
+            ) : !isSpeaking ? (
               <button
                 className="synced-control-btn synced-control-play"
                 onClick={speak}
@@ -303,30 +447,43 @@ export function SyncedTextReader({
                 [Stop]
               </button>
             )}
+            {voiceSettings.useOpenVoice && (
+              <span className="synced-openvoice-badge" title="Using cloned voice">
+                [Cloned Voice]
+              </span>
+            )}
           </div>
 
           <div className="synced-text-controls-right">
             <label className="synced-control-label">
               Speed: {voiceSettings.rate.toFixed(1)}x
             </label>
-            <label className="synced-control-label">
-              Voice:
-              <select
-                value={selectedVoice?.name || ''}
-                onChange={(e) => {
-                  const voice = availableVoices.find((v) => v.name === e.target.value);
-                  if (voice) setSelectedVoice(voice);
-                }}
-                className="synced-voice-select"
-              >
-                {availableVoices.map((voice) => (
-                  <option key={voice.name} value={voice.name}>
-                    {voice.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {!voiceSettings.useOpenVoice && (
+              <label className="synced-control-label">
+                Voice:
+                <select
+                  value={selectedVoice?.name || ''}
+                  onChange={(e) => {
+                    const voice = availableVoices.find((v) => v.name === e.target.value);
+                    if (voice) setSelectedVoice(voice);
+                  }}
+                  className="synced-voice-select"
+                >
+                  {availableVoices.map((voice) => (
+                    <option key={voice.name} value={voice.name}>
+                      {voice.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
+        </div>
+      )}
+
+      {openVoiceError && (
+        <div className="synced-text-error">
+          [OpenVoice Error: {openVoiceError}]
         </div>
       )}
 

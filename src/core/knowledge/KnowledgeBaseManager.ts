@@ -528,16 +528,17 @@ export class KnowledgeBaseManager {
       [query, limit]
     );
 
-    // Get KB titles
+    // Get KB titles in a single query (optimized from N+1 queries)
     const kbIds = [...new Set(results.map((r) => r.kb_id))];
     const kbTitles: Record<number, string> = {};
-    for (const kbId of kbIds) {
-      const kb = this.db.query<{ title: string }>(
-        'SELECT title FROM knowledge_bases WHERE id = ?',
-        [kbId]
+    if (kbIds.length > 0) {
+      const placeholders = kbIds.map(() => '?').join(',');
+      const kbResults = this.db.query<{ id: number; title: string }>(
+        `SELECT id, title FROM knowledge_bases WHERE id IN (${placeholders})`,
+        kbIds
       );
-      if (kb.length > 0) {
-        kbTitles[kbId] = kb[0].title;
+      for (const kb of kbResults) {
+        kbTitles[kb.id] = kb.title;
       }
     }
 

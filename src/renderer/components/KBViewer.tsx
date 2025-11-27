@@ -316,17 +316,17 @@ function KBViewer({ kbId, kbTitle, onBack }: KBViewerProps) {
     const sectionId = getSectionFullId();
 
     try {
-      await window.electronAPI.invoke('highlight:create', {
+      const newHighlight = await window.electronAPI.invoke('highlight:create', {
         kb_id: kbId,
         section_id: sectionId,
         start_offset: selectedText.startOffset,
         end_offset: selectedText.endOffset,
         text: selectedText.text,
         color: selectedHighlightColor,
-      });
+      }) as Highlight;
 
-      // Reload highlights
-      await loadHighlights();
+      // Optimistically update local state instead of reloading all highlights
+      setHighlights(prev => [...prev, newHighlight]);
 
       // Clear selection
       window.getSelection()?.removeAllRanges();
@@ -340,13 +340,14 @@ function KBViewer({ kbId, kbTitle, onBack }: KBViewerProps) {
   const removeHighlight = async (highlightId: number) => {
     try {
       await window.electronAPI.invoke('highlight:delete', highlightId);
-      await loadHighlights();
+      // Optimistically update local state instead of reloading all highlights
+      setHighlights(prev => prev.filter(h => h.id !== highlightId));
     } catch (err) {
       console.error('Failed to remove highlight:', err);
     }
   };
 
-  // Apply highlights to content
+  // Apply highlights to content - optimized with stable keys
   const renderContentWithHighlights = (content: string) => {
     const sectionHighlights = getSectionHighlights();
 
@@ -360,17 +361,17 @@ function KBViewer({ kbId, kbTitle, onBack }: KBViewerProps) {
     const parts: JSX.Element[] = [];
     let lastIndex = 0;
 
-    sortedHighlights.forEach((highlight, index) => {
-      // Add text before highlight
+    sortedHighlights.forEach((highlight) => {
+      // Add text before highlight - use stable key based on position
       if (highlight.start_offset > lastIndex) {
         parts.push(
-          <span key={`text-${index}`}>
+          <span key={`text-before-${highlight.id}`}>
             {content.slice(lastIndex, highlight.start_offset)}
           </span>
         );
       }
 
-      // Add highlighted text
+      // Add highlighted text - use highlight.id as stable key
       const highlightColor = HIGHLIGHT_COLORS.find(c => c.name === highlight.color)?.color || '#fef08a';
       parts.push(
         <span
@@ -392,10 +393,10 @@ function KBViewer({ kbId, kbTitle, onBack }: KBViewerProps) {
       lastIndex = highlight.end_offset;
     });
 
-    // Add remaining text
+    // Add remaining text - use stable key
     if (lastIndex < content.length) {
       parts.push(
-        <span key="text-end">{content.slice(lastIndex)}</span>
+        <span key={`text-end-${lastIndex}`}>{content.slice(lastIndex)}</span>
       );
     }
 

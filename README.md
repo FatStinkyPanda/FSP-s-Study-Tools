@@ -1,9 +1,39 @@
 # FSP's Study Tools - Development README
 
-**Version:** 1.0.0  
-**Author:** FatStinkyPanda  
-**Contact:** support@fatstinkypanda.com  
-**License:** [To be determined]
+**Version:** 1.0.0
+**Author:** FatStinkyPanda
+**Contact:** support@fatstinkypanda.com
+**License:** MIT License (see [LICENSE](LICENSE))
+
+---
+
+## IMPORTANT: Disclaimer and Terms of Use
+
+**BY USING THIS SOFTWARE, YOU AGREE TO THE FOLLOWING TERMS:**
+
+This software is provided **"AS-IS" WITHOUT WARRANTY OF ANY KIND**. The authors, developers, contributors, and any affiliated parties accept **NO RESPONSIBILITY OR LIABILITY** for any damages, data loss, or other issues arising from the use of this software.
+
+**You use this software entirely at your own risk.** This includes:
+- Any data loss or corruption
+- Inaccuracies in AI-generated content or study materials
+- System issues or failures
+- Any consequences from relying on the software's output
+
+The educational content and AI-generated materials are for **informational purposes only** and should not be solely relied upon for certification exams or professional qualifications.
+
+For complete terms, see the [LICENSE](LICENSE) file.
+
+---
+
+## Support the Project
+
+If FSP's Study Tools has helped you in your learning journey and you'd like to support its continued development, contributions are welcome and greatly appreciated!
+
+**Monetary Contributions:** Venmo [@FatStinkyPanda](https://venmo.com/FatStinkyPanda)
+
+**Code Contributions:** Pull requests, bug reports, and feature suggestions are always welcome!
+
+---
 
 ## Project Overview
 
@@ -599,35 +629,41 @@ A comprehensive learning session integrating all techniques:
 
 ### Phase 3: Knowledge Base Engine
 - [x] File parsing system (PDF, DOCX)
-- [ ] Additional file format support (Markdown, EPUB, PPT)
+- [x] Additional file format support (Markdown, EPUB, PPT, TXT)
 - [x] Semantic indexing (TF-IDF vector embeddings)
 - [x] Full-text search (SQLite FTS5)
+- [x] PDF image extraction and display
 
 ### Phase 4: Learning Features
 - [x] Progress tracking (ProgressManager with SM-2 algorithm)
 - [x] Practice test system (AI-powered TestGenerator)
 - [x] Conversation management (ConversationManager)
 - [x] Recommendation engine (personalized learning paths)
-- [ ] Jasper AI Learning Assistant
-- [ ] Learning retention techniques integration
-- [ ] Text-to-Voice with synchronized highlighting (OpenVoice)
+- [x] Jasper AI Learning Assistant (Chat mode with KB integration)
+- [x] Learning retention techniques integration (LearningTechniquesSettings)
+- [x] Text-to-Voice with synchronized highlighting (SyncedTextReader)
+- [x] Jasper Study mode (5 learning techniques: retrieval, elaboration, Feynman, interleaving, dual-coding)
+- [x] Jasper Review mode (SM-2 spaced repetition with flashcard UI)
+- [ ] OpenVoice custom voice cloning
 
 ### Phase 5: UI/UX Development
 - [x] UI implementation (React + Electron)
 - [x] Analytics Dashboard with progress visualization
 - [x] SVG-based charting library (no external dependencies)
-- [ ] Knowledge base editor (enhanced version)
-- [x] Settings management
-- [ ] Jasper dynamic orb visual component
+- [x] Knowledge base editor (KBEditor with drag-drop)
+- [x] Settings management (AI, voice, theme settings)
+- [x] Jasper dynamic orb visual component (8 visual states)
+- [x] Voice settings and profile management
 
 ### Phase 6: Polish & Packaging
 - [x] Testing suite (Jest with comprehensive tests)
 - [x] Error handling (enhanced user-friendly error system)
-- [ ] Performance optimization
-- [ ] Security implementation (API key encryption)
-- [ ] Documentation (API.md, USER_GUIDE.md, DEVELOPER.md)
-- [ ] Packaging system (electron-builder)
-- [ ] Auto-update system
+- [x] Performance optimization (N+1 query fixes, pagination, optimistic updates)
+- [x] Security implementation (API key encryption with Electron safeStorage - DPAPI on Windows)
+- [x] Documentation (API.md, USER_GUIDE.md, DEVELOPER.md)
+- [x] Packaging system (electron-builder configured)
+- [x] Auto-update system (electron-updater with GitHub releases)
+- [ ] Windows executable testing
 - [ ] Release preparation
 
 ---

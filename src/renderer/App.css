@@ -2462,6 +2462,913 @@ body {
   color: var(--success);
 }
 
+/* Pagination Controls */
+.pagination-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 0;
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.pagination-btn {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: white;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination-info {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* ==========================================
+   Voice Settings Styles
+   ========================================== */
+
+/* Checkbox label styling */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-primary);
+  cursor: pointer;
+}
+
+/* Voice Profiles Section */
+.voice-profiles-section {
+  margin: 15px 0;
+}
+
+.voice-profiles-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.voice-profiles-header label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.add-profile-btn {
+  background: transparent;
+  border: 1px solid var(--accent-primary);
+  color: var(--accent-primary);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.add-profile-btn:hover {
+  background: var(--accent-primary);
+  color: white;
+}
+
+.no-profiles-message {
+  padding: 15px;
+  background: var(--card-bg);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.no-profiles-message p {
+  margin: 5px 0;
+  color: var(--text-muted);
+}
+
+.voice-profiles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.voice-profile-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.voice-profile-item:hover {
+  background: var(--card-hover);
+  border-color: var(--border-highlight);
+}
+
+.voice-profile-item.selected {
+  border-color: var(--accent-primary);
+  background: rgba(77, 171, 247, 0.1);
+}
+
+.voice-profile-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.profile-type {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.delete-profile-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.delete-profile-btn:hover {
+  background: rgba(255, 100, 100, 0.15);
+  color: #ff6464;
+}
+
+/* Test Voice Button */
+.test-voice-btn {
+  background: var(--accent-secondary);
+  border: none;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.test-voice-btn:hover {
+  background: var(--accent-primary);
+  transform: translateY(-1px);
+}
+
+.test-voice-btn.testing {
+  background: #e74c3c;
+}
+
+.test-voice-btn.testing:hover {
+  background: #c0392b;
+}
+
+/* Voice Training Section */
+.voice-training-section {
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color);
+}
+
+.voice-training-section h4 {
+  margin: 0 0 10px 0;
+  color: var(--text-primary);
+  font-size: 1.05rem;
+}
+
+.select-audio-btn,
+.train-voice-btn {
+  background: var(--card-bg);
+  border: 1px solid var(--border-highlight);
+  color: var(--text-primary);
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-right: 10px;
+}
+
+.select-audio-btn:hover,
+.train-voice-btn:hover:not(:disabled) {
+  background: var(--card-hover);
+  border-color: var(--accent-primary);
+}
+
+.train-voice-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.selected-file {
+  display: inline-block;
+  margin-left: 10px;
+  color: var(--accent-primary);
+  font-size: 0.9rem;
+}
+
+/* Voice Profile Modal */
+.voice-profile-modal {
+  width: 100%;
+  max-width: 550px;
+}
+
+/* Voice Selector Row */
+.voice-selector-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.voice-selector-row select {
+  flex: 1;
+}
+
+.preview-voice-btn,
+.preview-profile-btn,
+.preview-btn-small {
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent-primary);
+  color: var(--accent-primary);
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.preview-voice-btn:hover,
+.preview-profile-btn:hover,
+.preview-btn-small:hover {
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+}
+
+/* Voice Profile Item Actions */
+.voice-profile-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.voice-profile-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.preview-profile-btn {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+}
+
+/* Profile Type Badges */
+.system-badge {
+  color: var(--accent-primary);
+  font-size: 0.8rem;
+}
+
+.custom-badge {
+  color: var(--text-warning);
+  font-size: 0.8rem;
+}
+
+.custom-badge.ready {
+  color: var(--text-success);
+}
+
+.custom-badge.training {
+  color: var(--accent-secondary);
+}
+
+.custom-badge.failed {
+  color: var(--text-error);
+}
+
+.training-error {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-error);
+  margin-top: 4px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.retry-training-btn {
+  background: var(--accent-secondary);
+  border: none;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.retry-training-btn:hover:not(:disabled) {
+  background: var(--accent-secondary-hover);
+}
+
+.retry-training-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* OpenVoice Service Status */
+.openvoice-status {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 15px;
+}
+
+.openvoice-status label {
+  font-weight: 600;
+  margin-bottom: 10px;
+  display: block;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.status-indicator {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.status-indicator.running {
+  background: rgba(74, 222, 128, 0.2);
+  color: var(--text-success);
+}
+
+.status-indicator.stopped {
+  background: rgba(248, 113, 113, 0.2);
+  color: var(--text-error);
+}
+
+.status-detail {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.status-detail.initialized {
+  color: var(--text-success);
+}
+
+.status-loading {
+  font-size: 0.85rem;
+  color: var(--accent-primary);
+  font-style: italic;
+}
+
+.status-error {
+  color: var(--text-error);
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+  padding: 8px;
+  background: rgba(248, 113, 113, 0.1);
+  border-radius: 4px;
+}
+
+.service-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.start-service-btn,
+.stop-service-btn,
+.init-models-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.start-service-btn {
+  background: var(--accent-success);
+  color: white;
+}
+
+.start-service-btn:hover:not(:disabled) {
+  background: var(--accent-success-hover);
+}
+
+.stop-service-btn {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.stop-service-btn:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.init-models-btn {
+  background: var(--accent-primary);
+  color: white;
+}
+
+.init-models-btn:hover:not(:disabled) {
+  background: var(--accent-primary-hover);
+}
+
+.start-service-btn:disabled,
+.stop-service-btn:disabled,
+.init-models-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.profiles-hint {
+  display: block;
+  margin-top: -5px;
+  margin-bottom: 10px;
+}
+
+/* Modal Tabs */
+.modal-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 20px;
+  background: var(--bg-secondary);
+}
+
+.modal-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  padding: 12px 20px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+}
+
+.modal-tab:hover {
+  color: var(--text-primary);
+}
+
+.modal-tab.active {
+  color: var(--accent-primary);
+  border-bottom-color: var(--accent-primary);
+}
+
+/* Voice Select Row in Modal */
+.voice-select-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.voice-select-row select {
+  flex: 1;
+}
+
+/* Form Hint */
+.form-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+/* Audio Upload Section */
+.audio-upload-section {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.audio-upload-section .selected-file {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  background: var(--bg-tertiary);
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+/* Custom Voice Info Box */
+.custom-voice-info {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 15px;
+  margin-top: 15px;
+}
+
+.custom-voice-info .info-title {
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0 0 10px 0;
+}
+
+.custom-voice-info ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.custom-voice-info li {
+  margin-bottom: 6px;
+}
+
+/* Voice Recording Section */
+.voice-recording-section {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid var(--border-color);
+}
+
+.recording-options {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.recording-option {
+  flex: 1;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.recording-option:hover {
+  background: var(--card-hover);
+}
+
+.recording-option.selected {
+  border-color: var(--accent-primary);
+  background: rgba(var(--accent-primary-rgb), 0.1);
+}
+
+.recording-option-title {
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.recording-option-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* Recording Controls */
+.recording-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.record-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 15px 25px;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.record-btn.ready {
+  background: var(--accent-primary);
+  border: none;
+  color: white;
+}
+
+.record-btn.recording {
+  background: #ef4444;
+  border: none;
+  color: white;
+  animation: pulse-recording 1.5s infinite;
+}
+
+@keyframes pulse-recording {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ef4444;
+  font-size: 0.9rem;
+}
+
+.recording-dot {
+  width: 8px;
+  height: 8px;
+  background: #ef4444;
+  border-radius: 50%;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Training Scripts */
+.training-scripts {
+  margin-top: 15px;
+}
+
+.training-scripts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.training-scripts-header label {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.script-item {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.script-item:hover {
+  background: var(--card-hover);
+}
+
+.script-item.selected {
+  border-color: var(--accent-primary);
+}
+
+.script-item.recorded {
+  border-color: var(--text-success);
+  background: rgba(34, 197, 94, 0.05);
+}
+
+.script-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.script-title {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.script-status {
+  font-size: 0.8rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.script-status.pending {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.script-status.recorded {
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--text-success);
+}
+
+.script-text {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  font-style: italic;
+}
+
+/* Recorded Samples List */
+.recorded-samples {
+  margin-top: 15px;
+}
+
+.recorded-samples h5 {
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.sample-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.sample-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sample-duration {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.sample-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sample-actions button {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.2s ease;
+}
+
+.sample-actions button:hover {
+  background: var(--card-hover);
+}
+
+.sample-actions button.delete:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--overlay-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal {
+  background: var(--card-bg);
+  border: 1px solid var(--border-highlight);
+  border-radius: 12px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.15rem;
+}
+
+.modal-close {
+  background: transparent;
+  border: 1px solid var(--border-highlight);
+  color: var(--text-muted);
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+  background: var(--card-hover);
+  color: var(--text-primary);
+}
+
+.modal-content {
+  padding: 20px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 15px 20px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.secondary-button {
+  background: transparent;
+  border: 1px solid var(--border-highlight);
+  color: var(--text-primary);
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+}
+
+.secondary-button:hover {
+  background: var(--card-hover);
+}
+
 /* Header Search Icon Button */
 .header-search-btn {
   background: transparent;

@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+
+const RESULTS_PER_PAGE = 10;
 
 interface KnowledgeBase {
   id: number;
@@ -41,6 +43,15 @@ function SearchResults({ onNavigateToSection, onClose }: SearchResultsProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Calculate paginated results
+  const paginatedResults = useMemo(() => {
+    const startIndex = (currentPage - 1) * RESULTS_PER_PAGE;
+    return results.slice(startIndex, startIndex + RESULTS_PER_PAGE);
+  }, [results, currentPage]);
+
+  const totalPages = useMemo(() => Math.ceil(results.length / RESULTS_PER_PAGE), [results.length]);
 
   useEffect(() => {
     loadKnowledgeBases();
@@ -77,6 +88,7 @@ function SearchResults({ onNavigateToSection, onClose }: SearchResultsProps) {
       ) as SearchResult[];
 
       setResults(searchResults);
+      setCurrentPage(1); // Reset to first page on new search
     } catch (err) {
       console.error('Search failed:', err);
       setError('Search failed. Please try again.');
@@ -232,11 +244,12 @@ function SearchResults({ onNavigateToSection, onClose }: SearchResultsProps) {
           <>
             <div className="results-count">
               Found {results.length} result{results.length !== 1 ? 's' : ''}
+              {totalPages > 1 && ` (showing ${(currentPage - 1) * RESULTS_PER_PAGE + 1}-${Math.min(currentPage * RESULTS_PER_PAGE, results.length)})`}
             </div>
             <ul className="results-list">
-              {results.map((result, index) => (
+              {paginatedResults.map((result) => (
                 <li
-                  key={`${result.section_id}-${index}`}
+                  key={`${result.section_id}-${result.module_id}-${result.chapter_id}`}
                   className="result-item"
                   onClick={() => handleResultClick(result)}
                 >
@@ -256,6 +269,27 @@ function SearchResults({ onNavigateToSection, onClose }: SearchResultsProps) {
                 </li>
               ))}
             </ul>
+            {totalPages > 1 && (
+              <div className="pagination-controls">
+                <button
+                  className="pagination-btn"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </button>
+                <span className="pagination-info">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  className="pagination-btn"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

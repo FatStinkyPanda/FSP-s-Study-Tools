@@ -3,6 +3,9 @@ import { IParser, ParsedDocument } from './IParser';
 import { PDFParser } from './PDFParser';
 import { DOCXParser } from './DOCXParser';
 import { TXTParser } from './TXTParser';
+import { MarkdownParser } from './MarkdownParser';
+import { EPUBParser } from './EPUBParser';
+import { PPTXParser } from './PPTXParser';
 
 /**
  * Manager for coordinating document parsers
@@ -16,6 +19,9 @@ export class ParserManager {
     this.registerParser(new PDFParser());
     this.registerParser(new DOCXParser());
     this.registerParser(new TXTParser());
+    this.registerParser(new MarkdownParser());
+    this.registerParser(new EPUBParser());
+    this.registerParser(new PPTXParser());
   }
 
   /**
@@ -126,8 +132,20 @@ export class ParserManager {
         extensions: ['docx'],
       },
       {
+        name: 'Markdown Documents',
+        extensions: ['md', 'markdown', 'mdown', 'mkd'],
+      },
+      {
+        name: 'EPUB E-Books',
+        extensions: ['epub'],
+      },
+      {
+        name: 'PowerPoint Presentations',
+        extensions: ['pptx', 'ppt'],
+      },
+      {
         name: 'Text Documents',
-        extensions: ['txt', 'text', 'md', 'markdown'],
+        extensions: ['txt', 'text'],
       },
     ];
   }

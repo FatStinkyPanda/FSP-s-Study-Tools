@@ -1,12 +1,29 @@
 // Voice Service Types
 
+// Audio sample for voice training
+export interface VoiceTrainingSample {
+  id: string;
+  name: string;
+  path?: string; // File path for saved samples
+  duration: number; // Duration in seconds
+  scriptId?: number; // Reference to training script if applicable
+  createdAt: string; // ISO date string
+}
+
 export interface VoiceProfile {
   id: string;
   name: string;
-  type: 'default' | 'custom';
+  type: 'system' | 'custom';
+  systemVoice?: string; // For system voices - the SpeechSynthesisVoice.name
   gender?: 'male' | 'female' | 'neutral';
   accent?: string;
+  language?: string;
   modelPath?: string; // For custom trained voices
+  audioSamplePath?: string; // Legacy: single audio sample path
+  trainingSamples?: VoiceTrainingSample[]; // Multiple audio samples for training
+  trainingStatus?: 'pending' | 'training' | 'ready' | 'failed';
+  trainingProgress?: number; // 0-100 percentage during training
+  created?: string; // ISO date string
   createdAt?: Date;
 }
 
@@ -76,44 +93,8 @@ export interface STTConfig {
   maxAlternatives: number;
 }
 
-// Default voice profiles
-export const DEFAULT_VOICES: VoiceProfile[] = [
-  {
-    id: 'voice-female-1',
-    name: 'Natural Female (US)',
-    type: 'default',
-    gender: 'female',
-    accent: 'American',
-  },
-  {
-    id: 'voice-female-2',
-    name: 'Natural Female (UK)',
-    type: 'default',
-    gender: 'female',
-    accent: 'British',
-  },
-  {
-    id: 'voice-male-1',
-    name: 'Natural Male (US)',
-    type: 'default',
-    gender: 'male',
-    accent: 'American',
-  },
-  {
-    id: 'voice-male-2',
-    name: 'Natural Male (UK)',
-    type: 'default',
-    gender: 'male',
-    accent: 'British',
-  },
-  {
-    id: 'voice-neutral-1',
-    name: 'Neutral (US)',
-    type: 'default',
-    gender: 'neutral',
-    accent: 'American',
-  },
-];
+// Default voice profiles - these are placeholders, actual system voices are loaded dynamically
+export const DEFAULT_VOICES: VoiceProfile[] = [];
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   selectedVoiceId: 'voice-female-1',

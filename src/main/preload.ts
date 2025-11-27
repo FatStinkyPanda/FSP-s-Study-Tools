@@ -1,5 +1,26 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
+// OpenVoice status interface
+export interface OpenVoiceStatus {
+  running: boolean;
+  initialized: boolean;
+  device: string;
+  error?: string;
+  checkpointsReady: boolean;
+}
+
+// OpenVoice profile interface
+export interface OpenVoiceProfile {
+  id: string;
+  name: string;
+  state: 'pending' | 'extracting' | 'ready' | 'failed';
+  created_at: string;
+  audio_samples: string[];
+  embedding_path?: string;
+  error?: string;
+  progress: number;
+}
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -13,6 +34,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Return cleanup function
     return () => ipcRenderer.removeListener('update-status', handler);
   },
+
+  // OpenVoice status event listener
+  onOpenVoiceStatus: (callback: (status: OpenVoiceStatus) => void) => {
+    const handler = (_event: IpcRendererEvent, status: OpenVoiceStatus) => callback(status);
+    ipcRenderer.on('openvoice:statusUpdate', handler);
+    return () => ipcRenderer.removeListener('openvoice:statusUpdate', handler);
+  },
+
+  // OpenVoice training progress event listener
+  onOpenVoiceTrainingUpdate: (callback: (profile: OpenVoiceProfile) => void) => {
+    const handler = (_event: IpcRendererEvent, profile: OpenVoiceProfile) => callback(profile);
+    ipcRenderer.on('openvoice:trainingUpdate', handler);
+    return () => ipcRenderer.removeListener('openvoice:trainingUpdate', handler);
+  },
 });
 
 // Update status interface
@@ -25,6 +60,8 @@ export interface UpdateStatus {
 export interface ElectronAPI {
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void;
+  onOpenVoiceStatus: (callback: (status: OpenVoiceStatus) => void) => () => void;
+  onOpenVoiceTrainingUpdate: (callback: (profile: OpenVoiceProfile) => void) => () => void;
 }
 
 declare global {

@@ -27,12 +27,18 @@
     "clean": "rimraf dist build out .webpack"
   },
   "dependencies": {
+    "@types/dompurify": "^3.0.5",
+    "@types/marked": "^5.0.2",
     "better-sqlite3": "^9.2.2",
+    "dompurify": "^3.3.0",
     "electron-squirrel-startup": "^1.0.0",
     "electron-updater": "^6.1.7",
+    "epub2": "^3.0.2",
     "mammoth": "^1.11.0",
+    "marked": "^17.0.1",
     "pdf2json": "^4.0.0",
     "pdfjs-dist": "^4.0.379",
+    "pptx-parser": "^1.1.7-beta.9",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "xml2js": "^0.6.2"
@@ -101,14 +107,18 @@
       "target": [
         "nsis",
         "portable"
-      ],
-      "icon": "resources/icon.ico"
+      ]
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "FatStinkyPanda",
+      "repo": "FSP-s-Study-Tools"
     }
   }
 }

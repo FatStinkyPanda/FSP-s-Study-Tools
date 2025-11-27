@@ -1,4 +1,5 @@
 import { DatabaseManager } from '../database/DatabaseManager';
+import { SecureStorage } from '../security';
 
 export interface AppSettings {
   // AI Provider API Keys
@@ -179,11 +180,11 @@ export class SettingsManager {
   getAll(): AppSettings {
     const settings: AppSettings = {};
 
-    // AI Provider API Keys
-    settings.openai_api_key = this.getString('openai_api_key');
-    settings.anthropic_api_key = this.getString('anthropic_api_key');
-    settings.google_api_key = this.getString('google_api_key');
-    settings.openrouter_api_key = this.getString('openrouter_api_key');
+    // AI Provider API Keys (decrypted)
+    settings.openai_api_key = this.getApiKey('openai');
+    settings.anthropic_api_key = this.getApiKey('anthropic');
+    settings.google_api_key = this.getApiKey('google');
+    settings.openrouter_api_key = this.getApiKey('openrouter');
 
     // Default AI Provider (with fallbacks)
     const provider = this.getString('default_ai_provider');
@@ -249,18 +250,18 @@ export class SettingsManager {
    * Update multiple settings at once
    */
   updateAll(settings: Partial<AppSettings>): void {
-    // AI Provider API Keys
+    // AI Provider API Keys (encrypted)
     if (settings.openai_api_key !== undefined) {
-      this.set('openai_api_key', settings.openai_api_key);
+      this.setApiKey('openai', settings.openai_api_key);
     }
     if (settings.anthropic_api_key !== undefined) {
-      this.set('anthropic_api_key', settings.anthropic_api_key);
+      this.setApiKey('anthropic', settings.anthropic_api_key);
     }
     if (settings.google_api_key !== undefined) {
-      this.set('google_api_key', settings.google_api_key);
+      this.setApiKey('google', settings.google_api_key);
     }
     if (settings.openrouter_api_key !== undefined) {
-      this.set('openrouter_api_key', settings.openrouter_api_key);
+      this.setApiKey('openrouter', settings.openrouter_api_key);
     }
 
     // Default AI Provider (with fallbacks)
@@ -382,8 +383,49 @@ export class SettingsManager {
    * Check if an API key is configured for a provider
    */
   hasApiKey(provider: 'openai' | 'anthropic' | 'google' | 'openrouter'): boolean {
-    const key = this.getString(`${provider}_api_key`);
+    const key = this.getApiKey(provider);
     return !!key && key.length > 0;
+  }
+
+  /**
+   * Securely store an API key (encrypted)
+   */
+  setApiKey(provider: 'openai' | 'anthropic' | 'google' | 'openrouter', key: string): void {
+    const encryptedKey = SecureStorage.encryptIfNeeded(key);
+    this.set(`${provider}_api_key`, encryptedKey);
+  }
+
+  /**
+   * Retrieve a decrypted API key
+   */
+  getApiKey(provider: 'openai' | 'anthropic' | 'google' | 'openrouter'): string | undefined {
+    const storedKey = this.getString(`${provider}_api_key`);
+    if (!storedKey) return undefined;
+    return SecureStorage.decrypt(storedKey);
+  }
+
+  /**
+   * Migrate existing plain-text API keys to encrypted storage
+   */
+  migrateApiKeysToSecure(): void {
+    const providers: Array<'openai' | 'anthropic' | 'google' | 'openrouter'> = [
+      'openai', 'anthropic', 'google', 'openrouter'
+    ];
+
+    for (const provider of providers) {
+      const storedKey = this.getString(`${provider}_api_key`);
+      if (storedKey && !SecureStorage.isEncrypted(storedKey)) {
+        console.log(`Migrating ${provider} API key to secure storage`);
+        this.setApiKey(provider, storedKey);
+      }
+    }
+  }
+
+  /**
+   * Get encryption status information
+   */
+  getSecurityInfo(): { available: boolean; platform: string; method: string } {
+    return SecureStorage.getEncryptionInfo();
   }
 
   /**

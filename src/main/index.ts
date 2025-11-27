@@ -12,6 +12,7 @@ import { UpdateManager } from '../core/update';
 import { RecommendationEngine } from '../core/recommendation';
 import { KB_TOOLS, AIAgentToolExecutor, createToolResultMessage } from '../core/ai/AIAgentTools';
 import { AIMessage, AIToolCall } from '../shared/ai-types';
+import { openVoiceService } from './openvoice-service';
 
 // Development mode detection
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -115,6 +116,9 @@ class Application {
     // Initialize Settings Manager
     this.settingsManager = new SettingsManager(this.databaseManager);
 
+    // Migrate existing plain-text API keys to encrypted storage
+    this.settingsManager.migrateApiKeysToSecure();
+
     // Initialize AI Manager
     this.aiManager = new AIManager();
 
@@ -201,6 +205,9 @@ class Application {
         this.updateManager.startAutoCheck();
       }
     }
+
+    // Pass mainWindow to OpenVoice service for status updates
+    openVoiceService.setMainWindow(this.mainWindow);
   }
 
   private setupIPCHandlers(): void {
@@ -734,6 +741,13 @@ class Application {
       return true;
     });
 
+    ipcMain.handle('settings:getSecurityInfo', async () => {
+      if (!this.settingsManager) {
+        throw new Error('Settings Manager not initialized');
+      }
+      return this.settingsManager.getSecurityInfo();
+    });
+
     // Progress tracking handlers
     ipcMain.handle('progress:record', async (_event, params: unknown) => {
       if (!this.progressManager) {
@@ -1170,6 +1184,181 @@ class Application {
       }
     });
 
+    // Single file selection dialog (for audio files, etc.)
+    ipcMain.handle('dialog:openFile', async (_event, options?: {
+      filters?: Array<{ name: string; extensions: string[] }>;
+      title?: string;
+      properties?: Array<'openFile' | 'openDirectory' | 'multiSelections' | 'showHiddenFiles'>;
+    }) => {
+      if (!this.mainWindow) {
+        throw new Error('Main window not initialized');
+      }
+
+      try {
+        const result = await dialog.showOpenDialog(this.mainWindow, {
+          title: options?.title || 'Select File',
+          filters: options?.filters || [{ name: 'All Files', extensions: ['*'] }],
+          properties: options?.properties || ['openFile'],
+        });
+
+        return {
+          canceled: result.canceled,
+          filePaths: result.filePaths,
+        };
+      } catch (error) {
+        console.error('Dialog open file error:', error);
+        throw error;
+      }
+    });
+
+    // Save audio sample for voice training
+    ipcMain.handle('voice:saveAudioSample', async (_event, options: {
+      profileId: string;
+      sampleId: string;
+      audioData: ArrayBuffer;
+      sampleName: string;
+      duration: number;
+      scriptId?: number;
+    }) => {
+      try {
+        const fs = await import('fs/promises');
+        const voicesDir = path.join(app.getPath('userData'), 'voices', options.profileId);
+
+        // Ensure directory exists
+        await fs.mkdir(voicesDir, { recursive: true });
+
+        // Save audio file
+        const fileName = `${options.sampleId}.webm`;
+        const filePath = path.join(voicesDir, fileName);
+        await fs.writeFile(filePath, Buffer.from(options.audioData));
+
+        // Return sample info
+        return {
+          success: true,
+          sample: {
+            id: options.sampleId,
+            name: options.sampleName,
+            path: filePath,
+            duration: options.duration,
+            scriptId: options.scriptId,
+            createdAt: new Date().toISOString(),
+          },
+        };
+      } catch (error) {
+        console.error('Save audio sample error:', error);
+        return {
+          success: false,
+          error: (error as Error).message,
+        };
+      }
+    });
+
+    // Get voice training samples for a profile
+    ipcMain.handle('voice:getSamples', async (_event, profileId: string) => {
+      try {
+        const fs = await import('fs/promises');
+        const voicesDir = path.join(app.getPath('userData'), 'voices', profileId);
+
+        // Check if directory exists
+        try {
+          await fs.access(voicesDir);
+        } catch {
+          return { success: true, samples: [] };
+        }
+
+        const files = await fs.readdir(voicesDir);
+        const samples = files
+          .filter(f => f.endsWith('.webm') || f.endsWith('.wav') || f.endsWith('.mp3'))
+          .map(f => ({
+            id: path.basename(f, path.extname(f)),
+            name: path.basename(f, path.extname(f)),
+            path: path.join(voicesDir, f),
+          }));
+
+        return { success: true, samples };
+      } catch (error) {
+        console.error('Get voice samples error:', error);
+        return { success: false, samples: [], error: (error as Error).message };
+      }
+    });
+
+    // Delete voice training sample
+    ipcMain.handle('voice:deleteSample', async (_event, options: {
+      profileId: string;
+      sampleId: string;
+    }) => {
+      try {
+        const fs = await import('fs/promises');
+        const voicesDir = path.join(app.getPath('userData'), 'voices', options.profileId);
+
+        // Find and delete the sample file
+        const files = await fs.readdir(voicesDir);
+        const sampleFile = files.find(f => f.startsWith(options.sampleId));
+
+        if (sampleFile) {
+          await fs.unlink(path.join(voicesDir, sampleFile));
+        }
+
+        return { success: true };
+      } catch (error) {
+        console.error('Delete voice sample error:', error);
+        return { success: false, error: (error as Error).message };
+      }
+    });
+
+    // Delete all voice profile data
+    ipcMain.handle('voice:deleteProfile', async (_event, profileId: string) => {
+      try {
+        const fs = await import('fs/promises');
+        const voicesDir = path.join(app.getPath('userData'), 'voices', profileId);
+
+        // Delete directory recursively if exists
+        try {
+          await fs.rm(voicesDir, { recursive: true, force: true });
+        } catch {
+          // Directory might not exist
+        }
+
+        return { success: true };
+      } catch (error) {
+        console.error('Delete voice profile error:', error);
+        return { success: false, error: (error as Error).message };
+      }
+    });
+
+    // Copy audio file to voice profile directory
+    ipcMain.handle('voice:copyAudioFile', async (_event, options: {
+      profileId: string;
+      sourcePath: string;
+      sampleId: string;
+    }) => {
+      console.log('[DEBUG] voice:copyAudioFile called with:', options);
+      try {
+        const fs = await import('fs/promises');
+        const voicesDir = path.join(app.getPath('userData'), 'voices', options.profileId);
+        console.log('[DEBUG] voicesDir:', voicesDir);
+
+        // Ensure directory exists
+        await fs.mkdir(voicesDir, { recursive: true });
+        console.log('[DEBUG] Directory created/exists');
+
+        // Copy file with new name
+        const ext = path.extname(options.sourcePath);
+        const destPath = path.join(voicesDir, `${options.sampleId}${ext}`);
+        console.log('[DEBUG] Copying from:', options.sourcePath, 'to:', destPath);
+        await fs.copyFile(options.sourcePath, destPath);
+        console.log('[DEBUG] File copied successfully');
+
+        return {
+          success: true,
+          path: destPath,
+        };
+      } catch (error) {
+        console.error('[DEBUG] Copy audio file error:', error);
+        return { success: false, error: (error as Error).message };
+      }
+    });
+
     ipcMain.handle('file:parse', async (_event, filePath: string) => {
       if (!this.knowledgeBaseManager) {
         throw new Error('Knowledge Base Manager not initialized');
@@ -1481,6 +1670,9 @@ class Application {
 
   private async cleanup(): Promise<void> {
     console.log('Cleaning up application...');
+
+    // Cleanup OpenVoice service
+    openVoiceService.cleanup();
 
     if (this.databaseManager) {
       await this.databaseManager.close();

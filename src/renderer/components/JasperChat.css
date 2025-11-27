@@ -79,6 +79,13 @@
   letter-spacing: 0.05em;
 }
 
+.jasper-settings-tab-indicator {
+  font-weight: 400;
+  font-size: 0.75rem;
+  text-transform: none;
+  color: var(--accent-primary, #3b82f6);
+}
+
 .jasper-kb-list {
   display: flex;
   flex-direction: column;
@@ -134,8 +141,8 @@
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 1.5rem;
-  padding: 1rem 2rem;
+  gap: 1rem;
+  padding: 0.5rem 1.5rem;
   background: linear-gradient(
     180deg,
     var(--bg-secondary, #1e293b) 0%,
@@ -473,4 +480,898 @@
   outline: 2px solid var(--accent-color, #3b82f6);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/* === NEW UI ELEMENTS === */
+
+/* Header Left Section */
+.jasper-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.jasper-avatar {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4A90D9 0%, #7C4DFF 100%);
+  padding: 2px;
+}
+
+.jasper-avatar svg {
+  width: 36px;
+  height: 36px;
+}
+
+.jasper-header-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.jasper-header-info h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.jasper-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+  margin-top: 2px;
+}
+
+/* Header Actions */
+.jasper-header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.jasper-action-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary, #94a3b8);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.jasper-action-btn:hover {
+  background: var(--bg-tertiary, #334155);
+  color: var(--text-primary, #f8fafc);
+}
+
+.jasper-action-btn:active {
+  transform: scale(0.95);
+}
+
+/* Status Bar */
+.jasper-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(180deg, var(--bg-secondary, #1e293b) 0%, transparent 100%);
+  border-bottom: 1px solid var(--border-color, #334155);
+  flex-shrink: 0;
+}
+
+.jasper-orb-mini {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+.jasper-status-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.jasper-status-text {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.jasper-kb-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem;
+  background: var(--bg-tertiary, #334155);
+  border-radius: 20px;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.jasper-kb-indicator svg {
+  color: var(--accent-color, #3b82f6);
+}
+
+/* Error Banner */
+.jasper-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: rgba(239, 68, 68, 0.15);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  font-size: 0.875rem;
+}
+
+.jasper-error-banner svg {
+  color: #ef4444;
+  flex-shrink: 0;
+}
+
+.jasper-error-banner span {
+  flex: 1;
+}
+
+.jasper-error-banner button {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 4px;
+  background: transparent;
+  color: #fca5a5;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.jasper-error-banner button:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+/* Welcome Screen */
+.jasper-welcome-orb {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 1.5rem;
+}
+
+.jasper-welcome h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.5rem;
+  color: var(--text-primary, #f8fafc);
+}
+
+.jasper-welcome-list {
+  text-align: left;
+  margin: 1rem auto;
+  padding-left: 1.5rem;
+  max-width: 400px;
+  list-style: disc;
+}
+
+.jasper-welcome-list li {
+  margin: 0.5rem 0;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.jasper-welcome-hint {
+  margin-top: 1.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-tertiary, #334155);
+  border-radius: 8px;
+  font-size: 0.875rem;
+}
+
+.jasper-welcome-hint strong {
+  color: var(--accent-color, #60a5fa);
+}
+
+/* Quick Actions */
+.jasper-quick-actions {
+  margin-top: auto;
+}
+
+.jasper-quick-actions h3 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary, #94a3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.jasper-quick-btn {
+  display: block;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary, #f8fafc);
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.jasper-quick-btn:hover {
+  background: var(--bg-tertiary, #334155);
+  border-color: var(--accent-color, #3b82f6);
+}
+
+.jasper-quick-btn:active {
+  transform: scale(0.98);
+}
+
+/* Message with Avatar Layout */
+.jasper-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  max-width: 85%;
+}
+
+.jasper-message-user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.jasper-message-jasper {
+  align-self: flex-start;
+}
+
+.jasper-message-avatar {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #4A90D9 0%, #7C4DFF 100%);
+}
+
+.jasper-message-avatar svg {
+  width: 24px;
+  height: 24px;
+  color: white;
+}
+
+.jasper-user-avatar {
+  background: var(--bg-tertiary, #334155);
+}
+
+.jasper-user-avatar svg {
+  color: var(--text-secondary, #94a3b8);
+}
+
+.jasper-message-bubble {
+  flex: 1;
+  padding: 0.875rem 1rem;
+  border-radius: 12px;
+  min-width: 0;
+}
+
+.jasper-message-user .jasper-message-bubble {
+  background: var(--accent-color, #3b82f6);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.jasper-message-jasper .jasper-message-bubble {
+  background: var(--bg-secondary, #1e293b);
+  border: 1px solid var(--border-color, #334155);
+  border-bottom-left-radius: 4px;
+}
+
+/* Message Sources */
+.jasper-message-sources {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color, #334155);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.jasper-sources-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.jasper-source-link {
+  padding: 0.25rem 0.5rem;
+  border: none;
+  border-radius: 4px;
+  background: var(--bg-tertiary, #334155);
+  color: var(--accent-color, #60a5fa);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.jasper-source-link:hover {
+  background: var(--accent-color, #3b82f6);
+  color: white;
+}
+
+/* KB List Styles */
+.jasper-kb-empty {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #94a3b8);
+  padding: 0.5rem;
+  text-align: center;
+  font-style: italic;
+}
+
+.jasper-kb-title {
+  font-size: 0.875rem;
+  color: var(--text-primary, #f8fafc);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Input Area Icon Buttons */
+.jasper-input-mode-toggle button {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.jasper-input-mode-toggle button svg {
+  flex-shrink: 0;
+}
+
+.jasper-send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  padding: 0;
+}
+
+.jasper-mic-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Responsive adjustments for new elements */
+@media (max-width: 1024px) {
+  .jasper-header-left {
+    flex: 1;
+  }
+
+  .jasper-message {
+    max-width: 90%;
+  }
+}
+
+@media (max-width: 768px) {
+  .jasper-header-left {
+    order: -1;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .jasper-header-actions {
+    position: absolute;
+    right: 1rem;
+    top: 1rem;
+  }
+
+  .jasper-chat-header {
+    position: relative;
+    padding-top: 1.5rem;
+  }
+
+  .jasper-quick-actions {
+    display: none;
+  }
+
+  .jasper-status-bar {
+    flex-wrap: wrap;
+  }
+
+  .jasper-kb-indicator {
+    width: 100%;
+    justify-content: center;
+    margin-top: 0.5rem;
+  }
+}
+
+/* ===========================================
+   STUDY MODE STYLES
+   =========================================== */
+
+.jasper-study-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.jasper-study-selector {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  overflow-y: auto;
+}
+
+.jasper-study-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.jasper-study-header h3 {
+  margin: 1rem 0 0.5rem;
+  font-size: 1.5rem;
+  color: var(--text-primary, #f8fafc);
+}
+
+.jasper-study-header p {
+  color: var(--text-secondary, #94a3b8);
+  margin: 0;
+}
+
+.jasper-study-empty {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.jasper-technique-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  width: 100%;
+  max-width: 800px;
+}
+
+.jasper-technique-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem;
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 12px;
+  background: var(--bg-secondary, #1e293b);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.jasper-technique-card:hover {
+  border-color: var(--accent-color, #60a5fa);
+  background: var(--bg-tertiary, #334155);
+  transform: translateY(-2px);
+}
+
+.jasper-technique-card.selected {
+  border-color: var(--accent-color, #3b82f6);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.technique-icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 0.75rem;
+  color: var(--accent-color, #60a5fa);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.jasper-technique-card h4 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: var(--text-primary, #f8fafc);
+}
+
+.jasper-technique-card p {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary, #94a3b8);
+  line-height: 1.4;
+}
+
+/* Study Session Styles */
+.jasper-study-session {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.jasper-session-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1rem 1.5rem;
+  background: var(--bg-secondary, #1e293b);
+  border-bottom: 1px solid var(--border-color, #334155);
+}
+
+.jasper-session-info {
+  flex: 1;
+}
+
+.jasper-session-info h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  color: var(--text-primary, #f8fafc);
+}
+
+.jasper-session-topic {
+  font-size: 0.8125rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.jasper-session-progress {
+  flex: 1;
+  max-width: 200px;
+}
+
+.jasper-progress-text {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+
+.jasper-progress-bar {
+  height: 6px;
+  background: var(--bg-tertiary, #334155);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.jasper-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4A90D9, #7C4DFF);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.jasper-end-session-btn {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.jasper-end-session-btn:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.jasper-study-messages {
+  flex: 1;
+}
+
+/* ===========================================
+   REVIEW MODE STYLES
+   =========================================== */
+
+.jasper-review-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  overflow-y: auto;
+}
+
+.jasper-review-stats {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  padding: 1rem;
+  background: var(--bg-secondary, #1e293b);
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+}
+
+.jasper-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.jasper-stat-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary, #f8fafc);
+}
+
+.jasper-stat-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.jasper-review-empty,
+.jasper-review-start {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem;
+}
+
+.jasper-review-empty h3,
+.jasper-review-start h3 {
+  margin: 1rem 0 0.5rem;
+  font-size: 1.5rem;
+  color: var(--text-primary, #f8fafc);
+}
+
+.jasper-review-empty p,
+.jasper-review-start p {
+  color: var(--text-secondary, #94a3b8);
+  margin: 0.25rem 0;
+}
+
+.jasper-review-hint {
+  font-size: 0.875rem;
+  margin-top: 1rem !important;
+}
+
+.jasper-start-review-btn {
+  margin-top: 1.5rem;
+  padding: 0.875rem 2rem;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #4A90D9, #7C4DFF);
+  color: white;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.jasper-start-review-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(74, 144, 217, 0.3);
+}
+
+/* Review Card Styles */
+.jasper-review-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary, #1e293b);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 16px;
+  overflow: hidden;
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.jasper-review-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background: var(--bg-tertiary, #334155);
+  border-bottom: 1px solid var(--border-color, #334155);
+}
+
+.jasper-review-source {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.jasper-review-count {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.75rem;
+  background: var(--bg-secondary, #1e293b);
+  border-radius: 12px;
+  color: var(--text-primary, #f8fafc);
+}
+
+.jasper-review-card-content {
+  flex: 1;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.jasper-review-question,
+.jasper-review-answer {
+  text-align: center;
+}
+
+.jasper-review-question h4,
+.jasper-review-answer h4 {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.jasper-review-question p,
+.jasper-review-answer p {
+  margin: 0;
+  font-size: 1.125rem;
+  color: var(--text-primary, #f8fafc);
+  line-height: 1.6;
+}
+
+.jasper-review-answer {
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color, #334155);
+}
+
+.jasper-view-source-btn {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--accent-color, #60a5fa);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent-color, #60a5fa);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.jasper-view-source-btn:hover {
+  background: var(--accent-color, #3b82f6);
+  color: white;
+}
+
+.jasper-review-card-actions {
+  padding: 1.5rem;
+  border-top: 1px solid var(--border-color, #334155);
+  display: flex;
+  justify-content: center;
+}
+
+.jasper-show-answer-btn {
+  padding: 0.875rem 2.5rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent-color, #3b82f6);
+  color: white;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.jasper-show-answer-btn:hover {
+  background: #2563eb;
+}
+
+.jasper-rating-buttons {
+  width: 100%;
+  text-align: center;
+}
+
+.jasper-rating-prompt {
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.jasper-rating-row {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.jasper-rating-btn {
+  flex: 1;
+  max-width: 100px;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.jasper-rating-fail {
+  background: #dc2626;
+  color: white;
+}
+
+.jasper-rating-fail:hover {
+  background: #b91c1c;
+}
+
+.jasper-rating-hard {
+  background: #f97316;
+  color: white;
+}
+
+.jasper-rating-hard:hover {
+  background: #ea580c;
+}
+
+.jasper-rating-good {
+  background: #22c55e;
+  color: white;
+}
+
+.jasper-rating-good:hover {
+  background: #16a34a;
+}
+
+.jasper-rating-easy {
+  background: #06b6d4;
+  color: white;
+}
+
+.jasper-rating-easy:hover {
+  background: #0891b2;
+}
+
+/* Responsive adjustments for Study/Review modes */
+@media (max-width: 768px) {
+  .jasper-technique-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .jasper-technique-card {
+    padding: 1rem;
+  }
+
+  .technique-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .jasper-session-header {
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .jasper-session-progress {
+    max-width: none;
+    order: 3;
+    width: 100%;
+  }
+
+  .jasper-review-stats {
+    gap: 1rem;
+  }
+
+  .jasper-stat-value {
+    font-size: 1.25rem;
+  }
+
+  .jasper-rating-row {
+    flex-wrap: wrap;
+  }
+
+  .jasper-rating-btn {
+    max-width: none;
+    flex: 1 1 45%;
+  }
 }

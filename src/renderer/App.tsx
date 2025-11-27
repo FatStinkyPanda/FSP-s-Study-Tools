@@ -11,6 +11,7 @@ import JasperChat from './components/JasperChat';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ErrorNotificationContainer, useErrorNotifications } from './components/ErrorNotification';
 import { toUserFriendlyError, errorToNotification, logError } from '../shared/errors';
+import { useOpenVoice, OpenVoiceStatus as OpenVoiceStatusType, OpenVoiceProfile as OpenVoiceProfileType } from './hooks/useOpenVoice';
 
 interface ElectronAPI {
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
@@ -31,6 +32,30 @@ interface KnowledgeBase {
   metadata?: Record<string, unknown>;
 }
 
+interface VoiceTrainingSample {
+  id: string;
+  name: string;
+  path?: string;
+  duration: number;
+  scriptId?: number;
+  createdAt: string;
+}
+
+interface VoiceProfile {
+  id: string;
+  name: string;
+  type: 'system' | 'custom';
+  systemVoice?: string; // For system TTS voices
+  openvoiceModel?: string; // For OpenVoice custom voices
+  openvoiceProfileId?: string; // OpenVoice backend profile ID
+  audioSamplePath?: string; // Reference audio for OpenVoice
+  trainingSamples?: VoiceTrainingSample[]; // Multiple audio samples for training
+  trainingStatus?: 'pending' | 'training' | 'ready' | 'failed';
+  trainingProgress?: number; // 0-100 percentage during training
+  trainingError?: string; // Error message if training failed
+  created?: string;
+}
+
 interface AppSettings {
   openai_api_key?: string;
   anthropic_api_key?: string;
@@ -49,6 +74,16 @@ interface AppSettings {
   temperature?: number;
   max_tokens?: number;
   theme?: 'dark' | 'light' | 'auto';
+  // Voice settings
+  voice_enabled?: boolean;
+  voice_speed?: number; // 0.5 - 2.0
+  voice_pitch?: number; // 0.5 - 2.0
+  voice_volume?: number; // 0.0 - 1.0
+  default_system_voice?: string; // Default system voice name from SpeechSynthesis API
+  selected_voice_profile?: string; // Voice profile ID
+  voice_profiles?: VoiceProfile[];
+  voice_auto_read?: boolean; // Auto-read AI responses
+  voice_highlight_sync?: boolean; // Sync text highlighting with speech
 }
 
 interface FetchModelsResult {
@@ -266,8 +301,41 @@ function App() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ kb: KnowledgeBase; confirmText: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Voice settings state
+  const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [testingVoice, setTestingVoice] = useState(false);
+  const [showVoiceProfileModal, setShowVoiceProfileModal] = useState(false);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [selectedAudioFile, setSelectedAudioFile] = useState<string | null>(null);
+  const [voiceModalTab, setVoiceModalTab] = useState<'system' | 'custom'>('system');
+  const [selectedModalVoice, setSelectedModalVoice] = useState<string>('');
+  const [previewingVoice, setPreviewingVoice] = useState(false);
+
+  // Voice recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingMode, setRecordingMode] = useState<'free' | 'script'>('free');
+  const [selectedScript, setSelectedScript] = useState<number | null>(null);
+  const [recordedSamples, setRecordedSamples] = useState<Array<{ id: string; name: string; duration: number; blob: Blob }>>([]);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const recordingTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
+  const recordingStartTimeRef = React.useRef<number>(0);
+
+  // Training scripts for voice cloning
+  const trainingScripts = [
+    { id: 1, title: "Introduction", text: "Hello, my name is Jasper and I am your AI learning assistant. I am here to help you study and learn new things." },
+    { id: 2, title: "Numbers & Letters", text: "The quick brown fox jumps over the lazy dog. One, two, three, four, five, six, seven, eight, nine, ten." },
+    { id: 3, title: "Questions", text: "How are you doing today? What would you like to learn about? Can I help you with anything else?" },
+    { id: 4, title: "Emotions", text: "That's fantastic news! I'm sorry to hear that. I'm excited to help you with this. Let me think about that for a moment." },
+    { id: 5, title: "Technical", text: "The algorithm processes the data efficiently. Initialize the variables before the main function. The API returns a JSON response." },
+  ];
+
   // Error notification system
   const { notifications, addNotification, dismissNotification } = useErrorNotifications();
+
+  // OpenVoice voice cloning service
+  const openVoice = useOpenVoice();
 
   // Helper to show user-friendly errors
   const showError = useCallback((error: unknown, context?: string) => {
@@ -307,6 +375,83 @@ function App() {
   useEffect(() => {
     applyTheme(settings.theme || 'dark');
   }, [settings.theme]);
+
+  // Load system voices for TTS
+  useEffect(() => {
+    const loadVoices = () => {
+      const voices = speechSynthesis.getVoices();
+      setSystemVoices(voices);
+    };
+
+    // Voices may not be loaded immediately
+    loadVoices();
+    speechSynthesis.onvoiceschanged = loadVoices;
+
+    return () => {
+      speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
+
+  // Sync OpenVoice training updates with local voice profiles
+  useEffect(() => {
+    // Listen for OpenVoice training updates via the hook's profiles
+    const syncTrainingStatus = () => {
+      if (!settings.voice_profiles || openVoice.profiles.length === 0) return;
+
+      let hasChanges = false;
+      const updatedProfiles = settings.voice_profiles.map(profile => {
+        if (profile.type !== 'custom' || !profile.openvoiceProfileId) return profile;
+
+        // Find matching OpenVoice profile
+        const ovProfile = openVoice.profiles.find(p => p.id === profile.openvoiceProfileId);
+        if (!ovProfile) return profile;
+
+        // Map OpenVoice state to local training status
+        let newStatus: VoiceProfile['trainingStatus'] = profile.trainingStatus;
+        let newProgress = profile.trainingProgress;
+        let newError = profile.trainingError;
+
+        if (ovProfile.state === 'extracting') {
+          newStatus = 'training';
+          newProgress = ovProfile.progress;
+        } else if (ovProfile.state === 'ready') {
+          newStatus = 'ready';
+          newProgress = 100;
+          newError = undefined;
+        } else if (ovProfile.state === 'failed') {
+          newStatus = 'failed';
+          newError = ovProfile.error;
+        } else if (ovProfile.state === 'pending') {
+          newStatus = 'pending';
+        }
+
+        // Check if anything changed
+        if (
+          newStatus !== profile.trainingStatus ||
+          newProgress !== profile.trainingProgress ||
+          newError !== profile.trainingError
+        ) {
+          hasChanges = true;
+          return {
+            ...profile,
+            trainingStatus: newStatus,
+            trainingProgress: newProgress,
+            trainingError: newError,
+          };
+        }
+        return profile;
+      });
+
+      if (hasChanges) {
+        setSettings(prev => ({
+          ...prev,
+          voice_profiles: updatedProfiles,
+        }));
+      }
+    };
+
+    syncTrainingStatus();
+  }, [openVoice.profiles, settings.voice_profiles]);
 
   const applyTheme = (theme: string) => {
     const root = document.documentElement;
@@ -355,11 +500,406 @@ function App() {
     }
   };
 
-  const handleSettingChange = (key: keyof AppSettings, value: string | number | string[]) => {
+  const handleSettingChange = (key: keyof AppSettings, value: string | number | string[] | boolean | VoiceProfile[]) => {
     setSettings(prev => ({
       ...prev,
       [key]: value
     }));
+  };
+
+  // Voice testing function
+  const testVoice = useCallback(() => {
+    if (testingVoice) {
+      speechSynthesis.cancel();
+      setTestingVoice(false);
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(
+      "Hello! I'm Jasper, your AI learning assistant. How can I help you study today?"
+    );
+
+    // Apply voice settings
+    utterance.rate = settings.voice_speed ?? 1.0;
+    utterance.pitch = settings.voice_pitch ?? 1.0;
+    utterance.volume = settings.voice_volume ?? 1.0;
+
+    // Find selected voice profile or use default system voice
+    const selectedProfile = settings.voice_profiles?.find(
+      p => p.id === settings.selected_voice_profile
+    );
+
+    if (selectedProfile?.type === 'system' && selectedProfile.systemVoice) {
+      const voice = systemVoices.find(v => v.name === selectedProfile.systemVoice);
+      if (voice) {
+        utterance.voice = voice;
+      }
+    } else if (settings.default_system_voice) {
+      // Fall back to default system voice if no profile selected
+      const voice = systemVoices.find(v => v.name === settings.default_system_voice);
+      if (voice) {
+        utterance.voice = voice;
+      }
+    }
+
+    utterance.onend = () => setTestingVoice(false);
+    utterance.onerror = () => setTestingVoice(false);
+
+    setTestingVoice(true);
+    speechSynthesis.speak(utterance);
+  }, [testingVoice, settings, systemVoices]);
+
+  // Preview a specific voice
+  const previewVoice = useCallback((voiceName: string) => {
+    if (previewingVoice) {
+      speechSynthesis.cancel();
+      setPreviewingVoice(false);
+      return;
+    }
+
+    const voice = systemVoices.find(v => v.name === voiceName);
+    if (!voice) return;
+
+    const utterance = new SpeechSynthesisUtterance(
+      "Hello! This is a preview of this voice. How does it sound?"
+    );
+    utterance.voice = voice;
+    utterance.rate = settings.voice_speed ?? 1.0;
+    utterance.pitch = settings.voice_pitch ?? 1.0;
+    utterance.volume = settings.voice_volume ?? 1.0;
+
+    utterance.onend = () => setPreviewingVoice(false);
+    utterance.onerror = () => setPreviewingVoice(false);
+
+    setPreviewingVoice(true);
+    speechSynthesis.speak(utterance);
+  }, [previewingVoice, settings, systemVoices]);
+
+  // Create a new voice profile (system or custom)
+  const createVoiceProfile = useCallback(async (
+    name: string,
+    systemVoice: string,
+    isCustom: boolean = false,
+    audioPath?: string,
+    samples?: Array<{ id: string; name: string; duration: number; blob: Blob }>
+  ) => {
+    const profileId = `profile-${Date.now()}`;
+    const trainingSamples: VoiceTrainingSample[] = [];
+    const savedAudioPaths: string[] = [];
+
+    // Save recorded samples to disk if creating a custom voice
+    if (isCustom && samples && samples.length > 0) {
+      for (const sample of samples) {
+        try {
+          // Convert Blob to ArrayBuffer
+          const arrayBuffer = await sample.blob.arrayBuffer();
+          const result = await window.electronAPI.invoke('voice:saveAudioSample', {
+            profileId,
+            sampleId: sample.id,
+            audioData: Array.from(new Uint8Array(arrayBuffer)),
+            format: 'webm'
+          }) as { success: boolean; path?: string; error?: string };
+
+          if (result.success && result.path) {
+            trainingSamples.push({
+              id: sample.id,
+              name: sample.name,
+              path: result.path,
+              duration: sample.duration,
+              createdAt: new Date().toISOString()
+            });
+            savedAudioPaths.push(result.path);
+          }
+        } catch (error) {
+          console.error('Failed to save sample:', sample.name, error);
+        }
+      }
+    }
+
+    // Copy uploaded audio file if provided
+    console.log('[DEBUG] createVoiceProfile - isCustom:', isCustom, 'audioPath:', audioPath);
+    if (isCustom && audioPath) {
+      try {
+        const sampleId = `uploaded-${Date.now()}`;
+        console.log('[DEBUG] Copying audio file with sampleId:', sampleId, 'profileId:', profileId, 'sourcePath:', audioPath);
+        const result = await window.electronAPI.invoke('voice:copyAudioFile', {
+          profileId,
+          sourcePath: audioPath,
+          sampleId
+        }) as { success: boolean; path?: string; error?: string };
+
+        console.log('[DEBUG] voice:copyAudioFile result:', result);
+        if (result.success && result.path) {
+          trainingSamples.push({
+            id: sampleId,
+            name: audioPath.split(/[\\/]/).pop() || 'Uploaded audio',
+            path: result.path,
+            duration: 0, // Duration unknown for uploaded files
+            createdAt: new Date().toISOString()
+          });
+          savedAudioPaths.push(result.path);
+          console.log('[DEBUG] Audio file copied successfully. savedAudioPaths:', savedAudioPaths);
+        } else {
+          console.error('[DEBUG] voice:copyAudioFile failed:', result.error);
+        }
+      } catch (error) {
+        console.error('Failed to copy uploaded file:', error);
+      }
+    } else {
+      console.log('[DEBUG] Skipping audio copy - isCustom:', isCustom, 'audioPath:', audioPath);
+    }
+
+    let openvoiceProfileId: string | undefined;
+    let trainingStatus: VoiceProfile['trainingStatus'] = isCustom ? 'pending' : undefined;
+    let trainingError: string | undefined;
+
+    console.log('[DEBUG] Before OpenVoice integration - isCustom:', isCustom, 'savedAudioPaths.length:', savedAudioPaths.length);
+    // For custom voices, integrate with OpenVoice
+    if (isCustom && savedAudioPaths.length > 0) {
+      console.log('[DEBUG] Entering OpenVoice integration block');
+      try {
+        // Track if service is ready (don't rely on stale closure state)
+        let serviceReady = openVoice.status.running;
+        console.log('[DEBUG] Initial serviceReady:', serviceReady, 'openVoice.status:', openVoice.status);
+
+        // Start OpenVoice service if not running
+        if (!serviceReady) {
+          console.log('[DEBUG] Starting OpenVoice service...');
+          const startResult = await openVoice.startService();
+          console.log('[DEBUG] startService result:', startResult);
+          if (startResult) {
+            serviceReady = true;
+          } else {
+            console.warn('Failed to start OpenVoice service, profile will be created without OpenVoice integration');
+          }
+        }
+
+        // Create OpenVoice profile if service is running
+        if (serviceReady) {
+          // Ensure models are initialized before creating profile
+          console.log('[DEBUG] Service ready, checking models initialized:', openVoice.status.initialized);
+          if (!openVoice.status.initialized) {
+            console.log('[DEBUG] Initializing OpenVoice models...');
+            const initResult = await openVoice.initializeModels();
+            console.log('[DEBUG] initializeModels result:', initResult);
+            if (!initResult) {
+              console.warn('Failed to initialize models, training may not work');
+            }
+          }
+
+          console.log('[DEBUG] Creating OpenVoice profile with name:', name, 'audio samples:', savedAudioPaths);
+          const ovProfile = await openVoice.createProfile(name, savedAudioPaths);
+          console.log('[DEBUG] createProfile result:', ovProfile);
+
+          if (ovProfile) {
+            openvoiceProfileId = ovProfile.id;
+            trainingStatus = 'pending';
+            console.log('[DEBUG] OpenVoice profile created:', ovProfile.id);
+
+            // Start training automatically
+            console.log('[DEBUG] Starting voice training for profile:', ovProfile.id);
+            const trainResult = await openVoice.trainProfile(ovProfile.id);
+            console.log('[DEBUG] trainProfile result:', trainResult);
+            if (trainResult) {
+              trainingStatus = 'training';
+              console.log('[DEBUG] Training started successfully');
+            } else {
+              trainingError = openVoice.error || 'Training failed to start';
+              console.error('[DEBUG] Training failed to start:', trainingError);
+            }
+          } else {
+            trainingError = openVoice.error || 'Failed to create OpenVoice profile';
+            console.error('[DEBUG] Failed to create OpenVoice profile:', trainingError);
+          }
+        } else {
+          console.log('[DEBUG] Service not ready, skipping OpenVoice integration');
+        }
+      } catch (error) {
+        console.error('[DEBUG] OpenVoice integration error:', error);
+        trainingError = (error as Error).message;
+      }
+    } else {
+      console.log('[DEBUG] Skipping OpenVoice integration - isCustom:', isCustom, 'savedAudioPaths.length:', savedAudioPaths.length);
+    }
+
+    const newProfile: VoiceProfile = {
+      id: profileId,
+      name,
+      type: isCustom ? 'custom' : 'system',
+      systemVoice: isCustom ? undefined : systemVoice,
+      openvoiceProfileId,
+      audioSamplePath: isCustom && trainingSamples.length > 0 ? trainingSamples[0].path : undefined,
+      trainingSamples: isCustom && trainingSamples.length > 0 ? trainingSamples : undefined,
+      trainingStatus,
+      trainingError,
+      created: new Date().toISOString(),
+    };
+
+    const existingProfiles = settings.voice_profiles || [];
+    const updatedProfiles = [...existingProfiles, newProfile];
+
+    // Update state
+    setSettings(prev => ({
+      ...prev,
+      voice_profiles: updatedProfiles,
+      selected_voice_profile: newProfile.id,
+    }));
+
+    // Auto-save to persistent storage
+    try {
+      const updatedSettings = {
+        ...settings,
+        voice_profiles: updatedProfiles,
+        selected_voice_profile: newProfile.id,
+      };
+      await window.electronAPI.invoke('settings:updateAll', updatedSettings);
+      console.log('Voice profile saved to persistent storage');
+    } catch (error) {
+      console.error('Failed to save voice profile to storage:', error);
+    }
+
+    setShowVoiceProfileModal(false);
+    setNewProfileName('');
+    setSelectedModalVoice('');
+    setSelectedAudioFile(null);
+    setVoiceModalTab('system');
+  }, [settings, openVoice]);
+
+  // Delete a voice profile and its associated audio files
+  const deleteVoiceProfile = useCallback(async (profileId: string) => {
+    const existingProfiles = settings.voice_profiles || [];
+    const profileToDelete = existingProfiles.find(p => p.id === profileId);
+
+    // Delete audio files from disk for custom profiles
+    if (profileToDelete?.type === 'custom') {
+      try {
+        await window.electronAPI.invoke('voice:deleteProfile', { profileId });
+      } catch (error) {
+        console.error('Failed to delete profile audio files:', error);
+      }
+
+      // Also delete from OpenVoice if it has an OpenVoice profile
+      if (profileToDelete.openvoiceProfileId && openVoice.status.running) {
+        try {
+          await openVoice.deleteProfile(profileToDelete.openvoiceProfileId);
+        } catch (error) {
+          console.error('Failed to delete OpenVoice profile:', error);
+        }
+      }
+    }
+
+    const updatedProfiles = existingProfiles.filter(p => p.id !== profileId);
+
+    setSettings(prev => ({
+      ...prev,
+      voice_profiles: updatedProfiles,
+      selected_voice_profile: updatedProfiles.length > 0 ? updatedProfiles[0].id : undefined,
+    }));
+  }, [settings.voice_profiles, openVoice]);
+
+  // Select audio file for voice training (placeholder for OpenVoice integration)
+  const selectAudioForTraining = useCallback(async () => {
+    console.log('[DEBUG] selectAudioForTraining called');
+    try {
+      const result = await window.electronAPI.invoke('dialog:openFile', {
+        filters: [
+          { name: 'Audio Files', extensions: ['mp3', 'wav', 'ogg', 'm4a', 'flac'] }
+        ],
+        properties: ['openFile']
+      }) as { canceled: boolean; filePaths: string[] };
+
+      console.log('[DEBUG] dialog:openFile result:', result);
+      if (!result.canceled && result.filePaths.length > 0) {
+        console.log('[DEBUG] Setting selectedAudioFile to:', result.filePaths[0]);
+        setSelectedAudioFile(result.filePaths[0]);
+      } else {
+        console.log('[DEBUG] File dialog was canceled or no file selected');
+      }
+    } catch (error) {
+      console.error('[DEBUG] selectAudioForTraining error:', error);
+      showError(error, 'Failed to select audio file');
+    }
+  }, [showError]);
+
+  // Start voice recording
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      audioChunksRef.current = [];
+      recordingStartTimeRef.current = Date.now();
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        // Calculate duration from start time ref (avoids closure issue with state)
+        const durationSeconds = Math.round((Date.now() - recordingStartTimeRef.current) / 1000);
+        const sampleName = selectedScript !== null
+          ? trainingScripts.find(s => s.id === selectedScript)?.title || `Sample ${recordedSamples.length + 1}`
+          : `Recording ${recordedSamples.length + 1}`;
+
+        setRecordedSamples(prev => [...prev, {
+          id: `sample-${Date.now()}`,
+          name: sampleName,
+          duration: durationSeconds,
+          blob: audioBlob,
+        }]);
+
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+        setRecordingTime(0);
+      };
+
+      recorder.start();
+      setMediaRecorder(recorder);
+      setIsRecording(true);
+
+      // Start timer for UI display
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } catch (error) {
+      showError(error, 'Failed to start recording. Please check microphone permissions.');
+    }
+  }, [selectedScript, recordedSamples.length, showError]);
+
+  // Stop voice recording
+  const stopRecording = useCallback(() => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+      setMediaRecorder(null);
+      setIsRecording(false);
+
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    }
+  }, [mediaRecorder]);
+
+  // Delete a recorded sample
+  const deleteRecordedSample = useCallback((sampleId: string) => {
+    setRecordedSamples(prev => prev.filter(s => s.id !== sampleId));
+  }, []);
+
+  // Play a recorded sample
+  const playRecordedSample = useCallback((blob: Blob) => {
+    const audioUrl = URL.createObjectURL(blob);
+    const audio = new Audio(audioUrl);
+    audio.play();
+    audio.onended = () => URL.revokeObjectURL(audioUrl);
+  }, []);
+
+  // Format recording time
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   // Fetch available models for a provider using the API key
@@ -737,6 +1277,14 @@ function App() {
                   kb.id === kbId ? { ...kb, enabled } : kb
                 )
               );
+            }}
+            voiceConfig={{
+              selectedVoiceName: settings.voice_profiles?.find(
+                p => p.id === settings.selected_voice_profile
+              )?.systemVoice || settings.default_system_voice,
+              rate: settings.voice_rate ?? 1.0,
+              pitch: settings.voice_pitch ?? 1.0,
+              volume: (settings.voice_volume ?? 0.8) * 100,
             }}
           />
         )}
@@ -1183,11 +1731,617 @@ function App() {
               </div>
             </div>
 
+            {/* Voice Settings */}
+            <div className="settings-section">
+              <h3>Voice Settings (Jasper)</h3>
+              <p className="settings-description">
+                Configure Jasper's text-to-speech voice and create custom voice profiles.
+              </p>
+
+              {/* Voice Enable/Disable */}
+              <div className="setting-item">
+                <label htmlFor="voice-enabled" className="checkbox-label">
+                  <input
+                    id="voice-enabled"
+                    type="checkbox"
+                    checked={settings.voice_enabled ?? true}
+                    onChange={(e) => handleSettingChange('voice_enabled', e.target.checked)}
+                  />
+                  <span>Enable Voice Output</span>
+                </label>
+                <span className="setting-hint">Allow Jasper to read responses aloud</span>
+              </div>
+
+              <div className="setting-item">
+                <label htmlFor="voice-auto-read" className="checkbox-label">
+                  <input
+                    id="voice-auto-read"
+                    type="checkbox"
+                    checked={settings.voice_auto_read ?? false}
+                    onChange={(e) => handleSettingChange('voice_auto_read', e.target.checked)}
+                  />
+                  <span>Auto-Read Responses</span>
+                </label>
+                <span className="setting-hint">Automatically read AI responses when received</span>
+              </div>
+
+              <div className="setting-item">
+                <label htmlFor="voice-highlight-sync" className="checkbox-label">
+                  <input
+                    id="voice-highlight-sync"
+                    type="checkbox"
+                    checked={settings.voice_highlight_sync ?? true}
+                    onChange={(e) => handleSettingChange('voice_highlight_sync', e.target.checked)}
+                  />
+                  <span>Sync Text Highlighting</span>
+                </label>
+                <span className="setting-hint">Highlight words as they are spoken</span>
+              </div>
+
+              {/* Default Voice Selector - Quick selection without profiles */}
+              <div className="setting-item">
+                <label htmlFor="default-voice">Default System Voice</label>
+                <div className="voice-selector-row">
+                  <select
+                    id="default-voice"
+                    value={settings.default_system_voice || ''}
+                    onChange={(e) => handleSettingChange('default_system_voice', e.target.value)}
+                  >
+                    <option value="">Browser Default</option>
+                    {systemVoices.map((voice) => (
+                      <option key={voice.name} value={voice.name}>
+                        {voice.name} ({voice.lang})
+                      </option>
+                    ))}
+                  </select>
+                  {settings.default_system_voice && (
+                    <button
+                      className="preview-voice-btn"
+                      onClick={() => previewVoice(settings.default_system_voice || '')}
+                      title="Preview voice"
+                    >
+                      {previewingVoice ? 'Stop' : 'Preview'}
+                    </button>
+                  )}
+                </div>
+                <span className="setting-hint">
+                  {systemVoices.length} voices available. Select a voice to use for TTS.
+                </span>
+              </div>
+
+              {/* Voice Profiles */}
+              <div className="setting-item voice-profiles-section">
+                <div className="voice-profiles-header">
+                  <label>Voice Profiles</label>
+                  <button
+                    className="add-profile-btn"
+                    onClick={() => {
+                      setShowVoiceProfileModal(true);
+                      setVoiceModalTab('system');
+                      setNewProfileName('');
+                      setSelectedModalVoice('');
+                    }}
+                  >
+                    + New Profile
+                  </button>
+                </div>
+                <span className="setting-hint profiles-hint">
+                  Create named profiles to quickly switch between different voice configurations.
+                </span>
+
+                {(settings.voice_profiles?.length || 0) === 0 ? (
+                  <div className="no-profiles-message">
+                    <p>No voice profiles created yet.</p>
+                  </div>
+                ) : (
+                  <div className="voice-profiles-list">
+                    {settings.voice_profiles?.map((profile) => (
+                      <div
+                        key={profile.id}
+                        className={`voice-profile-item ${settings.selected_voice_profile === profile.id ? 'selected' : ''}`}
+                      >
+                        <div
+                          className="voice-profile-info"
+                          onClick={() => handleSettingChange('selected_voice_profile', profile.id)}
+                        >
+                          <span className="profile-name">{profile.name}</span>
+                          <span className="profile-type">
+                            {profile.type === 'system' ? (
+                              <span className="system-badge">System: {profile.systemVoice?.split(' ')[0] || 'Default'}</span>
+                            ) : (
+                              <span className={`custom-badge ${profile.trainingStatus}`}>
+                                Custom {profile.trainingStatus === 'ready' ? '(Ready)' :
+                                       profile.trainingStatus === 'training' ? `(Training ${profile.trainingProgress || 0}%)` :
+                                       profile.trainingStatus === 'failed' ? '(Failed)' : '(Pending)'}
+                                {profile.trainingSamples && profile.trainingSamples.length > 0 && (
+                                  <span className="sample-count"> - {profile.trainingSamples.length} sample{profile.trainingSamples.length !== 1 ? 's' : ''}</span>
+                                )}
+                              </span>
+                            )}
+                          </span>
+                          {profile.trainingError && (
+                            <span className="training-error" title={profile.trainingError}>
+                              Error: {profile.trainingError.substring(0, 50)}{profile.trainingError.length > 50 ? '...' : ''}
+                            </span>
+                          )}
+                        </div>
+                        <div className="voice-profile-actions">
+                          {profile.type === 'system' && profile.systemVoice && (
+                            <button
+                              className="preview-profile-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                previewVoice(profile.systemVoice || '');
+                              }}
+                              title="Preview this voice"
+                            >
+                              {previewingVoice ? 'Stop' : 'Play'}
+                            </button>
+                          )}
+                          {profile.type === 'custom' && profile.trainingStatus === 'failed' && profile.openvoiceProfileId && (
+                            <button
+                              className="retry-training-btn"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (profile.openvoiceProfileId) {
+                                  await openVoice.trainProfile(profile.openvoiceProfileId);
+                                }
+                              }}
+                              title="Retry training"
+                              disabled={openVoice.isLoading}
+                            >
+                              Retry
+                            </button>
+                          )}
+                          <button
+                            className="delete-profile-btn"
+                            onClick={() => deleteVoiceProfile(profile.id)}
+                            title="Delete profile"
+                          >
+                            x
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Voice Parameters */}
+              <div className="setting-item">
+                <label htmlFor="voice-speed">
+                  Speed
+                  <span className="setting-value">{(settings.voice_speed ?? 1.0).toFixed(1)}x</span>
+                </label>
+                <input
+                  id="voice-speed"
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.1"
+                  value={settings.voice_speed ?? 1.0}
+                  onChange={(e) => handleSettingChange('voice_speed', parseFloat(e.target.value))}
+                />
+                <span className="setting-hint">Speaking rate (0.5x - 2x)</span>
+              </div>
+
+              <div className="setting-item">
+                <label htmlFor="voice-pitch">
+                  Pitch
+                  <span className="setting-value">{(settings.voice_pitch ?? 1.0).toFixed(1)}</span>
+                </label>
+                <input
+                  id="voice-pitch"
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.1"
+                  value={settings.voice_pitch ?? 1.0}
+                  onChange={(e) => handleSettingChange('voice_pitch', parseFloat(e.target.value))}
+                />
+                <span className="setting-hint">Voice pitch (0.5 - 2.0)</span>
+              </div>
+
+              <div className="setting-item">
+                <label htmlFor="voice-volume">
+                  Volume
+                  <span className="setting-value">{Math.round((settings.voice_volume ?? 1.0) * 100)}%</span>
+                </label>
+                <input
+                  id="voice-volume"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={settings.voice_volume ?? 1.0}
+                  onChange={(e) => handleSettingChange('voice_volume', parseFloat(e.target.value))}
+                />
+                <span className="setting-hint">Volume level (0-100%)</span>
+              </div>
+
+              {/* Test Voice Button */}
+              <div className="setting-item">
+                <button
+                  className={`test-voice-btn ${testingVoice ? 'testing' : ''}`}
+                  onClick={testVoice}
+                >
+                  {testingVoice ? 'Stop Test' : 'Test Voice'}
+                </button>
+                <span className="setting-hint">
+                  Preview the current voice settings
+                </span>
+              </div>
+
+              {/* OpenVoice Training Section (placeholder) */}
+              <div className="voice-training-section">
+                <h4>Custom Voice Training (OpenVoice)</h4>
+                <p className="settings-description">
+                  Train a custom voice using your own audio samples. This feature uses OpenVoice
+                  for high-quality voice cloning.
+                </p>
+
+                {/* OpenVoice Service Status */}
+                <div className="setting-item openvoice-status">
+                  <label>OpenVoice Service Status</label>
+                  <div className="status-row">
+                    <span className={`status-indicator ${openVoice.status.running ? 'running' : 'stopped'}`}>
+                      {openVoice.status.running ? 'Running' : 'Stopped'}
+                    </span>
+                    {openVoice.status.running && (
+                      <>
+                        <span className="status-detail">
+                          Device: {openVoice.status.device}
+                        </span>
+                        {openVoice.status.initialized && (
+                          <span className="status-detail initialized">Models Loaded</span>
+                        )}
+                      </>
+                    )}
+                    {openVoice.isLoading && (
+                      <span className="status-loading">Loading...</span>
+                    )}
+                  </div>
+                  {openVoice.error && (
+                    <div className="status-error">{openVoice.error}</div>
+                  )}
+                  <div className="service-controls">
+                    {!openVoice.status.running ? (
+                      <button
+                        className="start-service-btn"
+                        onClick={async () => {
+                          const success = await openVoice.startService();
+                          if (success && !openVoice.status.initialized) {
+                            await openVoice.initializeModels();
+                          }
+                        }}
+                        disabled={openVoice.isLoading}
+                      >
+                        Start OpenVoice Service
+                      </button>
+                    ) : (
+                      <>
+                        {!openVoice.status.initialized && (
+                          <button
+                            className="init-models-btn"
+                            onClick={() => openVoice.initializeModels()}
+                            disabled={openVoice.isLoading}
+                          >
+                            Initialize Models
+                          </button>
+                        )}
+                        <button
+                          className="stop-service-btn"
+                          onClick={() => openVoice.stopService()}
+                          disabled={openVoice.isLoading}
+                        >
+                          Stop Service
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="setting-item">
+                  <button
+                    className="select-audio-btn"
+                    onClick={selectAudioForTraining}
+                  >
+                    Select Audio Sample
+                  </button>
+                  {selectedAudioFile && (
+                    <span className="selected-file">
+                      Selected: {selectedAudioFile.split(/[\\/]/).pop()}
+                    </span>
+                  )}
+                </div>
+                <div className="setting-item">
+                  <button
+                    className="train-voice-btn"
+                    disabled={!selectedAudioFile || openVoice.isLoading}
+                    onClick={async () => {
+                      if (!selectedAudioFile) return;
+
+                      // Create a quick profile with the selected audio
+                      const profileName = `Voice ${new Date().toLocaleDateString()}`;
+                      await createVoiceProfile(profileName, '', true, selectedAudioFile, undefined);
+                      setSelectedAudioFile(null);
+                    }}
+                  >
+                    {openVoice.isLoading ? 'Processing...' : 'Create & Train Voice'}
+                  </button>
+                  <span className="setting-hint">
+                    Provide a clear audio sample (10-30 seconds) for best results
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div className="settings-actions">
               <button className="primary-button" onClick={saveSettings}>
                 Save Settings
               </button>
             </div>
+
+            {/* Voice Profile Creation Modal */}
+            {showVoiceProfileModal && (
+              <div className="modal-overlay" onClick={() => setShowVoiceProfileModal(false)}>
+                <div className="modal voice-profile-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="modal-header">
+                    <h3>Create Voice Profile</h3>
+                    <button className="modal-close" onClick={() => setShowVoiceProfileModal(false)}>x</button>
+                  </div>
+
+                  {/* Tab Navigation */}
+                  <div className="modal-tabs">
+                    <button
+                      className={`modal-tab ${voiceModalTab === 'system' ? 'active' : ''}`}
+                      onClick={() => setVoiceModalTab('system')}
+                    >
+                      System Voice
+                    </button>
+                    <button
+                      className={`modal-tab ${voiceModalTab === 'custom' ? 'active' : ''}`}
+                      onClick={() => setVoiceModalTab('custom')}
+                    >
+                      Custom Voice (Clone)
+                    </button>
+                  </div>
+
+                  <div className="modal-content">
+                    {/* Common: Profile Name */}
+                    <div className="form-group">
+                      <label htmlFor="profile-name">Profile Name</label>
+                      <input
+                        id="profile-name"
+                        type="text"
+                        placeholder={voiceModalTab === 'system' ? "e.g., Professional, Casual" : "e.g., My Voice, Dad's Voice"}
+                        value={newProfileName}
+                        onChange={(e) => setNewProfileName(e.target.value)}
+                      />
+                    </div>
+
+                    {/* System Voice Tab Content */}
+                    {voiceModalTab === 'system' && (
+                      <>
+                        <div className="form-group">
+                          <label htmlFor="system-voice">Select System Voice</label>
+                          <div className="voice-select-row">
+                            <select
+                              id="system-voice"
+                              value={selectedModalVoice}
+                              onChange={(e) => setSelectedModalVoice(e.target.value)}
+                            >
+                              <option value="">Select a voice...</option>
+                              {systemVoices.map((voice) => (
+                                <option key={voice.name} value={voice.name}>
+                                  {voice.name} ({voice.lang})
+                                </option>
+                              ))}
+                            </select>
+                            {selectedModalVoice && (
+                              <button
+                                className="preview-btn-small"
+                                onClick={() => previewVoice(selectedModalVoice)}
+                              >
+                                {previewingVoice ? 'Stop' : 'Preview'}
+                              </button>
+                            )}
+                          </div>
+                          <span className="form-hint">{systemVoices.length} voices available on your system</span>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Custom Voice Tab Content */}
+                    {voiceModalTab === 'custom' && (
+                      <>
+                        {/* Recording Mode Selection */}
+                        <div className="form-group">
+                          <label>Choose Input Method</label>
+                          <div className="recording-options">
+                            <div
+                              className={`recording-option ${recordingMode === 'free' ? 'selected' : ''}`}
+                              onClick={() => setRecordingMode('free')}
+                            >
+                              <div className="recording-option-title">Free Recording</div>
+                              <div className="recording-option-desc">Record anything you want</div>
+                            </div>
+                            <div
+                              className={`recording-option ${recordingMode === 'script' ? 'selected' : ''}`}
+                              onClick={() => setRecordingMode('script')}
+                            >
+                              <div className="recording-option-title">Guided Scripts</div>
+                              <div className="recording-option-desc">Read provided scripts</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Upload Existing Audio Option */}
+                        <div className="form-group">
+                          <label>Or Upload Existing Audio</label>
+                          <div className="audio-upload-section">
+                            <button
+                              className="select-audio-btn"
+                              onClick={selectAudioForTraining}
+                            >
+                              Select Audio File
+                            </button>
+                            {selectedAudioFile && (
+                              <span className="selected-file">
+                                {selectedAudioFile.split(/[\\/]/).pop()}
+                              </span>
+                            )}
+                          </div>
+                          <span className="form-hint">
+                            Supported formats: MP3, WAV, OGG, M4A, FLAC
+                          </span>
+                        </div>
+
+                        {/* Script Selection (if script mode) */}
+                        {recordingMode === 'script' && (
+                          <div className="training-scripts">
+                            <div className="training-scripts-header">
+                              <label>Training Scripts</label>
+                              <span className="form-hint">Select a script and read it aloud</span>
+                            </div>
+                            {trainingScripts.map((script) => {
+                              const isRecorded = recordedSamples.some(s => s.name === script.title);
+                              return (
+                                <div
+                                  key={script.id}
+                                  className={`script-item ${selectedScript === script.id ? 'selected' : ''} ${isRecorded ? 'recorded' : ''}`}
+                                  onClick={() => setSelectedScript(script.id)}
+                                >
+                                  <div className="script-header">
+                                    <span className="script-title">{script.title}</span>
+                                    <span className={`script-status ${isRecorded ? 'recorded' : 'pending'}`}>
+                                      {isRecorded ? 'Recorded' : 'Pending'}
+                                    </span>
+                                  </div>
+                                  <div className="script-text">"{script.text}"</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Recording Controls */}
+                        <div className="voice-recording-section">
+                          <div className="recording-controls">
+                            {!isRecording ? (
+                              <button
+                                className="record-btn ready"
+                                onClick={startRecording}
+                                disabled={recordingMode === 'script' && selectedScript === null}
+                              >
+                                Start Recording
+                              </button>
+                            ) : (
+                              <>
+                                <div className="recording-indicator">
+                                  <span className="recording-dot"></span>
+                                  Recording: {formatTime(recordingTime)}
+                                </div>
+                                <button
+                                  className="record-btn recording"
+                                  onClick={stopRecording}
+                                >
+                                  Stop Recording
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Recorded Samples List */}
+                        {recordedSamples.length > 0 && (
+                          <div className="recorded-samples">
+                            <h5>Recorded Samples ({recordedSamples.length})</h5>
+                            {recordedSamples.map((sample) => (
+                              <div key={sample.id} className="sample-item">
+                                <div className="sample-info">
+                                  <span className="sample-name">{sample.name}</span>
+                                  <span className="sample-duration">{formatTime(sample.duration)}</span>
+                                </div>
+                                <div className="sample-actions">
+                                  <button onClick={() => playRecordedSample(sample.blob)}>Play</button>
+                                  <button className="delete" onClick={() => deleteRecordedSample(sample.id)}>Delete</button>
+                                </div>
+                              </div>
+                            ))}
+                            <span className="form-hint">
+                              More samples = better voice quality. Aim for 3-5 recordings for best results.
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="custom-voice-info">
+                          <p className="info-title">Tips for Best Results:</p>
+                          <ul>
+                            <li>Use a quiet environment with minimal background noise</li>
+                            <li>Speak clearly at a consistent volume and pace</li>
+                            <li>Record multiple samples (10-30 seconds each) for better quality</li>
+                            <li>You can add more samples later to refine the voice</li>
+                          </ul>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="modal-actions">
+                    <button className="secondary-button" onClick={() => {
+                      setShowVoiceProfileModal(false);
+                      setNewProfileName('');
+                      setSelectedModalVoice('');
+                      setSelectedAudioFile(null);
+                      setRecordedSamples([]);
+                      setSelectedScript(null);
+                      setRecordingMode('free');
+                    }}>
+                      Cancel
+                    </button>
+                    <button
+                      className="primary-button"
+                      disabled={
+                        !newProfileName.trim() ||
+                        (voiceModalTab === 'system' && !selectedModalVoice) ||
+                        (voiceModalTab === 'custom' && !selectedAudioFile && recordedSamples.length === 0)
+                      }
+                      onClick={async () => {
+                        console.log('[DEBUG] Modal Create button clicked - voiceModalTab:', voiceModalTab);
+                        console.log('[DEBUG] Modal state - selectedAudioFile:', selectedAudioFile, 'recordedSamples.length:', recordedSamples.length);
+
+                        if (voiceModalTab === 'system') {
+                          await createVoiceProfile(newProfileName, selectedModalVoice, false);
+                        } else {
+                          // Validate we have audio before creating custom profile
+                          if (!selectedAudioFile && recordedSamples.length === 0) {
+                            console.error('[DEBUG] Cannot create custom profile without audio!');
+                            return;
+                          }
+
+                          // For custom voices, save recorded samples and/or uploaded file
+                          console.log('[DEBUG] Creating custom profile with audioPath:', selectedAudioFile);
+                          await createVoiceProfile(
+                            newProfileName,
+                            '',
+                            true,
+                            selectedAudioFile || undefined,
+                            recordedSamples.length > 0 ? recordedSamples : undefined
+                          );
+                          // Reset recording state after profile creation
+                          setRecordedSamples([]);
+                          setSelectedScript(null);
+                          setRecordingMode('free');
+                        }
+                      }}
+                    >
+                      {voiceModalTab === 'custom' ? 'Create & Start Training' : 'Create Profile'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>
