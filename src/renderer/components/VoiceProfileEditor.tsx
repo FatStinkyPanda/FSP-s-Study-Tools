@@ -71,6 +71,16 @@ export function VoiceProfileEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'samples' | 'record'>('details');
+  const [validationResult, setValidationResult] = useState<{
+    valid: boolean;
+    summary?: {
+      total_duration: number;
+      total_speech_duration: number;
+      speech_percentage: number;
+    };
+    recommendations?: string[];
+  } | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -250,9 +260,66 @@ export function VoiceProfileEditor({
   // Format duration as MM:SS
   const formatDuration = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+    const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+
+  // Validate audio samples before training
+  const validateAudioSamples = useCallback(async () => {
+    const samples = editedProfile.trainingSamples || [];
+    if (samples.length === 0) {
+      setValidationResult(null);
+      return;
+    }
+
+    const audioPaths = samples.map(s => s.path).filter((p): p is string => !!p);
+    if (audioPaths.length === 0) {
+      setValidationResult(null);
+      return;
+    }
+
+    setIsValidating(true);
+    setError(null);
+
+    try {
+      const result = await window.electronAPI.invoke('openvoice:validateAudio', audioPaths) as {
+        success: boolean;
+        valid?: boolean;
+        summary?: {
+          total_duration: number;
+          total_speech_duration: number;
+          speech_percentage: number;
+        };
+        recommendations?: string[];
+        error?: string;
+      };
+
+      if (result.success) {
+        setValidationResult({
+          valid: result.valid || false,
+          summary: result.summary,
+          recommendations: result.recommendations,
+        });
+      } else {
+        setError(result.error || 'Validation failed');
+        setValidationResult(null);
+      }
+    } catch (err) {
+      setError('Failed to validate audio');
+      setValidationResult(null);
+    } finally {
+      setIsValidating(false);
+    }
+  }, [editedProfile.trainingSamples]);
+
+  // Auto-validate when samples change
+  useEffect(() => {
+    if (editedProfile.trainingSamples && editedProfile.trainingSamples.length > 0) {
+      validateAudioSamples();
+    } else {
+      setValidationResult(null);
+    }
+  }, [editedProfile.trainingSamples, validateAudioSamples]);
 
   // Save profile changes
   const handleSave = async () => {
@@ -443,6 +510,34 @@ export function VoiceProfileEditor({
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Validation Results */}
+              {isValidating && (
+                <div className="validation-status validating">
+                  Analyzing audio quality...
+                </div>
+              )}
+
+              {validationResult && !isValidating && (
+                <div className={`validation-status ${validationResult.valid ? 'valid' : 'invalid'}`}>
+                  <div className="validation-header">
+                    {validationResult.valid ? '[OK] Audio Ready for Training' : '[WARNING] Audio Issues Detected'}
+                  </div>
+                  {validationResult.summary && (
+                    <div className="validation-summary">
+                      <span>Duration: {formatDuration(validationResult.summary.total_duration)}</span>
+                      <span>Speech: {formatDuration(validationResult.summary.total_speech_duration)} ({validationResult.summary.speech_percentage}%)</span>
+                    </div>
+                  )}
+                  {validationResult.recommendations && validationResult.recommendations.length > 0 && (
+                    <div className="validation-recommendations">
+                      {validationResult.recommendations.map((rec, i) => (
+                        <div key={i} className="recommendation">{rec}</div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

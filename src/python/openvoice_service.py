@@ -783,6 +783,183 @@ def train_profile(profile_id: str):
         'message': message
     })
 
+
+@app.route('/validate-audio', methods=['POST'])
+def validate_audio():
+    """
+    Validate audio file(s) before training to prevent failures.
+    Returns detailed analysis including:
+    - Duration
+    - Audio quality metrics
+    - Estimated speech duration via VAD
+    - Recommendations for success
+    """
+    data = request.json
+    audio_paths = data.get('audio_paths', [])
+
+    if not audio_paths:
+        return jsonify({'error': 'No audio files provided'}), 400
+
+    results = []
+    total_duration = 0
+    total_speech_duration = 0
+    all_valid = True
+
+    for audio_path in audio_paths:
+        result = _validate_single_audio(audio_path)
+        results.append(result)
+
+        if result.get('valid'):
+            total_duration += result.get('duration', 0)
+            total_speech_duration += result.get('speech_duration', 0)
+        else:
+            all_valid = False
+
+    # Overall validation
+    min_speech_required = 5.0  # seconds
+    recommended_speech = 30.0  # seconds for best results
+
+    validation_result = {
+        'valid': all_valid and total_speech_duration >= min_speech_required,
+        'files': results,
+        'summary': {
+            'total_files': len(audio_paths),
+            'valid_files': sum(1 for r in results if r.get('valid')),
+            'total_duration': round(total_duration, 2),
+            'total_speech_duration': round(total_speech_duration, 2),
+            'min_speech_required': min_speech_required,
+            'recommended_speech': recommended_speech,
+            'speech_percentage': round((total_speech_duration / total_duration * 100) if total_duration > 0 else 0, 1),
+        },
+        'recommendations': []
+    }
+
+    # Add recommendations
+    if total_speech_duration < min_speech_required:
+        validation_result['recommendations'].append(
+            f"Need at least {min_speech_required}s of detected speech. Currently: {total_speech_duration:.1f}s. "
+            "Try recording longer audio or speaking more clearly."
+        )
+        validation_result['valid'] = False
+    elif total_speech_duration < recommended_speech:
+        validation_result['recommendations'].append(
+            f"For best voice cloning quality, we recommend at least {recommended_speech}s of speech. "
+            f"Currently: {total_speech_duration:.1f}s. Consider adding more samples."
+        )
+
+    if any(r.get('is_quiet') for r in results):
+        validation_result['recommendations'].append(
+            "Some audio files are very quiet. This may affect voice cloning quality. "
+            "Try recording at a higher volume or closer to the microphone."
+        )
+
+    return jsonify(validation_result)
+
+
+def _validate_single_audio(audio_path: str) -> Dict[str, Any]:
+    """Validate a single audio file and return detailed analysis"""
+    result = {
+        'path': audio_path,
+        'valid': False,
+        'duration': 0,
+        'speech_duration': 0,
+        'is_quiet': False,
+        'error': None,
+        'details': {}
+    }
+
+    try:
+        # Check file exists
+        if not os.path.exists(audio_path):
+            result['error'] = 'File not found'
+            return result
+
+        # Check file size
+        file_size = os.path.getsize(audio_path)
+        if file_size == 0:
+            result['error'] = 'File is empty'
+            return result
+
+        result['details']['file_size'] = file_size
+
+        # Load and analyze with pydub
+        from pydub import AudioSegment
+        audio = AudioSegment.from_file(audio_path)
+
+        result['duration'] = audio.duration_seconds
+        result['details']['channels'] = audio.channels
+        result['details']['sample_rate'] = audio.frame_rate
+        result['details']['sample_width'] = audio.sample_width
+        result['details']['dBFS'] = round(audio.dBFS, 2) if audio.dBFS != float('-inf') else -100
+        result['details']['max_amplitude'] = audio.max
+
+        # Check for silent/corrupt audio
+        if audio.max == 0:
+            result['error'] = 'Audio file appears to be silent or corrupted (no audio data detected)'
+            return result
+
+        # Check for very quiet audio
+        if audio.dBFS < -50:
+            result['is_quiet'] = True
+            result['details']['quiet_warning'] = f'Audio is very quiet ({audio.dBFS:.1f} dBFS)'
+
+        # Minimum duration check
+        if audio.duration_seconds < 3:
+            result['error'] = f'Audio too short ({audio.duration_seconds:.1f}s). Minimum 3 seconds required.'
+            return result
+
+        # Try VAD analysis to estimate speech duration
+        try:
+            speech_duration = _analyze_speech_duration(audio_path)
+            result['speech_duration'] = speech_duration
+            result['details']['speech_percentage'] = round((speech_duration / audio.duration_seconds * 100) if audio.duration_seconds > 0 else 0, 1)
+
+            if speech_duration < 3:
+                result['error'] = f'Not enough speech detected ({speech_duration:.1f}s). Please ensure clear speech is present.'
+                return result
+
+        except Exception as vad_error:
+            logger.warning(f"VAD analysis failed for {audio_path}: {vad_error}")
+            # If VAD fails, estimate speech as 70% of duration (conservative estimate)
+            result['speech_duration'] = audio.duration_seconds * 0.7
+            result['details']['speech_estimated'] = True
+
+        result['valid'] = True
+        return result
+
+    except Exception as e:
+        result['error'] = f'Failed to analyze audio: {str(e)}'
+        logger.error(f"Audio validation error for {audio_path}: {e}")
+        return result
+
+
+def _analyze_speech_duration(audio_path: str) -> float:
+    """Use VAD to analyze actual speech duration in audio file"""
+    try:
+        from whisper_timestamped.transcribe import get_audio_tensor, get_vad_segments
+
+        SAMPLE_RATE = 16000
+
+        audio_tensor = get_audio_tensor(audio_path)
+        segments = get_vad_segments(
+            audio_tensor,
+            output_sample=True,
+            min_speech_duration=0.1,
+            min_silence_duration=1,
+            method="silero",
+        )
+
+        total_speech = sum(
+            (float(seg["end"]) - float(seg["start"])) / SAMPLE_RATE
+            for seg in segments
+        )
+
+        return total_speech
+
+    except Exception as e:
+        logger.warning(f"VAD analysis failed: {e}")
+        raise
+
 @app.route('/synthesize', methods=['POST'])
 def synthesize():
     """Synthesize speech with voice cloning"""
@@ -876,6 +1053,106 @@ def checkpoints_status():
         'base_speakers_exists': base_speakers_path.exists(),
         'ready': converter_path.exists() and base_speakers_path.exists()
     })
+
+
+# Global download state
+_download_state = {
+    'downloading': False,
+    'progress': 0,
+    'status': '',
+    'error': None
+}
+
+
+@app.route('/checkpoints/download', methods=['POST'])
+def download_checkpoints():
+    """Download OpenVoice v2 checkpoints automatically"""
+    global _download_state
+
+    if _download_state['downloading']:
+        return jsonify({
+            'success': False,
+            'error': 'Download already in progress',
+            'progress': _download_state['progress'],
+            'status': _download_state['status']
+        }), 400
+
+    # Start download in background
+    thread = threading.Thread(target=_download_checkpoints_task, daemon=True)
+    thread.start()
+
+    return jsonify({
+        'success': True,
+        'message': 'Download started',
+        'progress': 0,
+        'status': 'Starting download...'
+    })
+
+
+@app.route('/checkpoints/download/status', methods=['GET'])
+def download_status():
+    """Get checkpoint download progress"""
+    return jsonify({
+        'downloading': _download_state['downloading'],
+        'progress': _download_state['progress'],
+        'status': _download_state['status'],
+        'error': _download_state['error']
+    })
+
+
+def _download_checkpoints_task():
+    """Background task to download checkpoints"""
+    global _download_state
+    import urllib.request
+    import zipfile
+
+    _download_state = {
+        'downloading': True,
+        'progress': 0,
+        'status': 'Initializing download...',
+        'error': None
+    }
+
+    try:
+        # OpenVoice v2 checkpoints URL
+        checkpoint_url = "https://myshell-public-repo-hosting.s3.amazonaws.com/openvoice/checkpoints_v2_0417.zip"
+        zip_path = config.checkpoints_dir / 'checkpoints_v2.zip'
+
+        # Ensure directory exists
+        config.checkpoints_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Downloading checkpoints from {checkpoint_url}")
+        _download_state['status'] = 'Downloading checkpoints (~300MB)...'
+
+        # Download with progress tracking
+        def progress_hook(count, block_size, total_size):
+            if total_size > 0:
+                percent = int(count * block_size * 100 / total_size)
+                _download_state['progress'] = min(percent, 95)  # Cap at 95 until extraction
+
+        urllib.request.urlretrieve(checkpoint_url, str(zip_path), progress_hook)
+
+        _download_state['progress'] = 95
+        _download_state['status'] = 'Extracting checkpoints...'
+        logger.info("Download complete, extracting...")
+
+        # Extract zip file
+        with zipfile.ZipFile(str(zip_path), 'r') as zip_ref:
+            zip_ref.extractall(str(config.checkpoints_dir))
+
+        # Clean up zip file
+        zip_path.unlink()
+
+        _download_state['progress'] = 100
+        _download_state['status'] = 'Checkpoints installed successfully!'
+        logger.info("Checkpoints installed successfully")
+
+    except Exception as e:
+        logger.error(f"Checkpoint download failed: {e}")
+        _download_state['error'] = str(e)
+        _download_state['status'] = f'Download failed: {e}'
+    finally:
+        _download_state['downloading'] = False
 
 # ============== Main ==============
 

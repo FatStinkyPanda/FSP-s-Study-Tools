@@ -120,6 +120,16 @@ class OpenVoiceServiceManager {
     ipcMain.handle('openvoice:downloadCheckpoints', async () => {
       return this.downloadCheckpoints();
     });
+
+    // Audio validation
+    ipcMain.handle('openvoice:validateAudio', async (_event, audioPaths: string[]) => {
+      return this.validateAudio(audioPaths);
+    });
+
+    // Download status
+    ipcMain.handle('openvoice:getDownloadStatus', async () => {
+      return this.getDownloadStatus();
+    });
   }
 
   private async makeRequest(
@@ -406,13 +416,107 @@ class OpenVoiceServiceManager {
     return { ready: false, error: result.error };
   }
 
-  async downloadCheckpoints(): Promise<{ success: boolean; error?: string }> {
-    // This would download checkpoints - for now just return instructions
+  async downloadCheckpoints(): Promise<{ success: boolean; message?: string; error?: string }> {
+    // Start automatic checkpoint download
+    const result = await this.makeRequest('POST', '/checkpoints/download', {}, 10000);
+
+    if (result.success) {
+      // Start polling for progress
+      this.pollDownloadProgress();
+      return { success: true, message: 'Download started' };
+    }
+
+    // If service isn't running, return manual instructions
     const checkpointsDir = path.join(app.getAppPath(), 'openvoice_checkpoints');
     return {
       success: false,
-      error: `Please download OpenVoice v2 checkpoints from https://myshell-public-repo-hosting.s3.amazonaws.com/openvoice/checkpoints_v2_0417.zip and extract to ${checkpointsDir}`,
+      error: result.error || `Please download OpenVoice v2 checkpoints from https://myshell-public-repo-hosting.s3.amazonaws.com/openvoice/checkpoints_v2_0417.zip and extract to ${checkpointsDir}`,
     };
+  }
+
+  async getDownloadStatus(): Promise<{
+    downloading: boolean;
+    progress: number;
+    status: string;
+    error?: string;
+  }> {
+    const result = await this.makeRequest('GET', '/checkpoints/download/status');
+    if (result.success) {
+      return {
+        downloading: result.data?.downloading || false,
+        progress: result.data?.progress || 0,
+        status: result.data?.status || '',
+        error: result.data?.error,
+      };
+    }
+    return { downloading: false, progress: 0, status: '', error: result.error };
+  }
+
+  private async pollDownloadProgress() {
+    const poll = async () => {
+      const status = await this.getDownloadStatus();
+      this.sendDownloadUpdate(status);
+
+      if (status.downloading) {
+        setTimeout(poll, 1000);
+      } else {
+        // Refresh main status when done
+        this.sendStatusUpdate();
+      }
+    };
+    poll();
+  }
+
+  private sendDownloadUpdate(status: {
+    downloading: boolean;
+    progress: number;
+    status: string;
+    error?: string;
+  }) {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('openvoice:downloadProgress', status);
+    }
+  }
+
+  async validateAudio(audioPaths: string[]): Promise<{
+    success: boolean;
+    valid?: boolean;
+    files?: Array<{
+      path: string;
+      valid: boolean;
+      duration: number;
+      speech_duration: number;
+      is_quiet: boolean;
+      error?: string;
+      details: Record<string, unknown>;
+    }>;
+    summary?: {
+      total_files: number;
+      valid_files: number;
+      total_duration: number;
+      total_speech_duration: number;
+      min_speech_required: number;
+      recommended_speech: number;
+      speech_percentage: number;
+    };
+    recommendations?: string[];
+    error?: string;
+  }> {
+    // Use longer timeout since VAD analysis can take time
+    const result = await this.makeRequest('POST', '/validate-audio', {
+      audio_paths: audioPaths,
+    }, 120000);
+
+    if (result.success) {
+      return {
+        success: true,
+        valid: result.data?.valid,
+        files: result.data?.files,
+        summary: result.data?.summary,
+        recommendations: result.data?.recommendations,
+      };
+    }
+    return { success: false, error: result.error };
   }
 
   private async findPython(): Promise<string | null> {

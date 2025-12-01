@@ -34,6 +34,36 @@ export interface SynthesizeRequest {
   speed?: number;
 }
 
+export interface AudioValidationResult {
+  valid: boolean;
+  files: Array<{
+    path: string;
+    valid: boolean;
+    duration: number;
+    speech_duration: number;
+    is_quiet: boolean;
+    error?: string;
+    details: Record<string, unknown>;
+  }>;
+  summary: {
+    total_files: number;
+    valid_files: number;
+    total_duration: number;
+    total_speech_duration: number;
+    min_speech_required: number;
+    recommended_speech: number;
+    speech_percentage: number;
+  };
+  recommendations: string[];
+}
+
+export interface DownloadProgress {
+  downloading: boolean;
+  progress: number;
+  status: string;
+  error?: string;
+}
+
 export interface UseOpenVoiceResult {
   // Status
   status: OpenVoiceStatus;
@@ -53,6 +83,9 @@ export interface UseOpenVoiceResult {
   trainProfile: (profileId: string) => Promise<boolean>;
   updateProfileSamples: (profileId: string, audioSamples: string[]) => Promise<OpenVoiceProfile | null>;
 
+  // Audio validation
+  validateAudio: (audioPaths: string[]) => Promise<AudioValidationResult | null>;
+
   // TTS Synthesis
   synthesize: (request: SynthesizeRequest) => Promise<string | null>;
   synthesizeToFile: (request: SynthesizeRequest) => Promise<string | null>;
@@ -60,6 +93,7 @@ export interface UseOpenVoiceResult {
   // Checkpoints
   checkpointsReady: boolean;
   downloadCheckpoints: () => Promise<{ success: boolean; error?: string }>;
+  downloadProgress: DownloadProgress | null;
 }
 
 export function useOpenVoice(): UseOpenVoiceResult {
@@ -72,6 +106,7 @@ export function useOpenVoice(): UseOpenVoiceResult {
   const [profiles, setProfiles] = useState<OpenVoiceProfile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
 
   // Subscribe to status updates
   useEffect(() => {
@@ -94,9 +129,20 @@ export function useOpenVoice(): UseOpenVoiceResult {
       });
     });
 
+    // Subscribe to download progress updates
+    const downloadCleanup = window.electronAPI.onOpenVoiceDownloadProgress((progress) => {
+      console.log('[useOpenVoice] Download progress:', progress.progress, progress.status);
+      setDownloadProgress(progress);
+      // Clear progress when download completes
+      if (!progress.downloading && progress.progress === 100) {
+        setTimeout(() => setDownloadProgress(null), 3000);
+      }
+    });
+
     return () => {
       cleanup();
       trainingCleanup();
+      downloadCleanup();
     };
   }, []);
 
@@ -323,6 +369,46 @@ export function useOpenVoice(): UseOpenVoiceResult {
     }
   }, [refreshStatus]);
 
+  const validateAudio = useCallback(async (audioPaths: string[]): Promise<AudioValidationResult | null> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await window.electronAPI.invoke('openvoice:validateAudio', audioPaths) as {
+        success: boolean;
+        valid?: boolean;
+        files?: AudioValidationResult['files'];
+        summary?: AudioValidationResult['summary'];
+        recommendations?: string[];
+        error?: string;
+      };
+      if (result.success && result.valid !== undefined) {
+        return {
+          valid: result.valid,
+          files: result.files || [],
+          summary: result.summary || {
+            total_files: 0,
+            valid_files: 0,
+            total_duration: 0,
+            total_speech_duration: 0,
+            min_speech_required: 5,
+            recommended_speech: 30,
+            speech_percentage: 0,
+          },
+          recommendations: result.recommendations || [],
+        };
+      }
+      if (result.error) {
+        setError(result.error);
+      }
+      return null;
+    } catch (err) {
+      setError((err as Error).message);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   return {
     status,
     isLoading,
@@ -336,10 +422,12 @@ export function useOpenVoice(): UseOpenVoiceResult {
     deleteProfile,
     trainProfile,
     updateProfileSamples,
+    validateAudio,
     synthesize,
     synthesizeToFile,
     checkpointsReady: status.checkpointsReady,
     downloadCheckpoints,
+    downloadProgress,
   };
 }
 

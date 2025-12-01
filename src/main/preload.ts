@@ -48,6 +48,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('openvoice:trainingUpdate', handler);
     return () => ipcRenderer.removeListener('openvoice:trainingUpdate', handler);
   },
+
+  // OpenVoice checkpoint download progress event listener
+  onOpenVoiceDownloadProgress: (callback: (status: DownloadProgress) => void) => {
+    const handler = (_event: IpcRendererEvent, status: DownloadProgress) => callback(status);
+    ipcRenderer.on('openvoice:downloadProgress', handler);
+    return () => ipcRenderer.removeListener('openvoice:downloadProgress', handler);
+  },
 });
 
 // Update status interface
@@ -56,12 +63,21 @@ export interface UpdateStatus {
   data?: unknown;
 }
 
+// Download progress interface
+export interface DownloadProgress {
+  downloading: boolean;
+  progress: number;
+  status: string;
+  error?: string;
+}
+
 // Type definitions for TypeScript
 export interface ElectronAPI {
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void;
   onOpenVoiceStatus: (callback: (status: OpenVoiceStatus) => void) => () => void;
   onOpenVoiceTrainingUpdate: (callback: (profile: OpenVoiceProfile) => void) => () => void;
+  onOpenVoiceDownloadProgress: (callback: (status: DownloadProgress) => void) => () => void;
 }
 
 declare global {
