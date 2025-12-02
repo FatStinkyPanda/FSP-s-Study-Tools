@@ -11,6 +11,9 @@
 
 import { DatabaseManager } from '../database/DatabaseManager';
 import { ContentChunk } from '../knowledge/ContentChunker';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('SemanticIndexer');
 
 export interface EmbeddingResult {
   chunkId: string;
@@ -74,7 +77,7 @@ export class SemanticIndexer {
     await this.loadVocabulary();
 
     this.initialized = true;
-    console.log(`SemanticIndexer initialized with ${this.vocabulary.size} terms in vocabulary`);
+    log.info(`SemanticIndexer initialized with ${this.vocabulary.size} terms in vocabulary`);
   }
 
   /**
@@ -104,7 +107,7 @@ export class SemanticIndexer {
       this.db.getDatabase().exec(createTableSQL);
     } catch (error) {
       // Table might already exist, which is fine
-      console.log('Embeddings table check complete');
+      log.debug('Embeddings table check complete');
     }
   }
 
@@ -137,7 +140,7 @@ export class SemanticIndexer {
         this.vocabulary.set(term, { term, df, idf });
       }
     } catch (error) {
-      console.log('No existing embeddings found, starting with empty vocabulary');
+      log.debug('No existing embeddings found, starting with empty vocabulary');
     }
   }
 
@@ -179,7 +182,7 @@ export class SemanticIndexer {
       }
 
       this.db.commitTransaction();
-      console.log(`Indexed ${indexedCount} chunks for KB ${kbId}`);
+      log.info(`Indexed ${indexedCount} chunks for KB ${kbId}`);
 
       return indexedCount;
     } catch (error) {
@@ -567,7 +570,7 @@ export class SemanticIndexer {
       }
 
       this.db.commitTransaction();
-      console.log(`Re-indexed ${rows.length} chunks`);
+      log.info(`Re-indexed ${rows.length} chunks`);
       return rows.length;
     } catch (error) {
       this.db.rollbackTransaction();

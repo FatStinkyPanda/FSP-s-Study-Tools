@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { DatabaseManager } from './DatabaseManager';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('Migration');
 
 interface Migration {
   version: number;
@@ -51,7 +54,7 @@ export class MigrationManager {
     for (const file of files) {
       const match = file.match(/^(\d+)_(.+)\.sql$/);
       if (!match) {
-        console.warn(`Skipping invalid migration file: ${file}`);
+        log.warn(`Skipping invalid migration file: ${file}`);
         continue;
       }
 
@@ -83,15 +86,15 @@ export class MigrationManager {
     const pending = migrations.filter(m => m.version > currentVersion);
 
     if (pending.length === 0) {
-      console.log('No pending migrations');
+      log.info('No pending migrations');
       return 0;
     }
 
-    console.log(`Applying ${pending.length} pending migration(s)...`);
+    log.info(`Applying ${pending.length} pending migration(s)...`);
 
     for (const migration of pending) {
       try {
-        console.log(`Applying migration ${migration.version}: ${migration.name}`);
+        log.info(`Applying migration ${migration.version}: ${migration.name}`);
 
         this.db.beginTransaction();
 
@@ -113,9 +116,9 @@ export class MigrationManager {
 
         this.db.commitTransaction();
 
-        console.log(`Migration ${migration.version} applied successfully`);
+        log.info(`Migration ${migration.version} applied successfully`);
       } catch (error) {
-        console.error(`Failed to apply migration ${migration.version}:`, error);
+        log.error(`Failed to apply migration ${migration.version}:`, error);
         this.db.rollbackTransaction();
         throw error;
       }
@@ -131,7 +134,7 @@ export class MigrationManager {
     const currentVersion = this.getCurrentVersion();
 
     if (targetVersion >= currentVersion) {
-      console.log('Nothing to rollback');
+      log.info('Nothing to rollback');
       return 0;
     }
 
@@ -140,7 +143,7 @@ export class MigrationManager {
       .filter(m => m.version > targetVersion && m.version <= currentVersion)
       .sort((a, b) => b.version - a.version); // Rollback in reverse order
 
-    console.log(`Rolling back ${toRollback.length} migration(s)...`);
+    log.info(`Rolling back ${toRollback.length} migration(s)...`);
 
     for (const migration of toRollback) {
       if (!migration.down) {
@@ -148,7 +151,7 @@ export class MigrationManager {
       }
 
       try {
-        console.log(`Rolling back migration ${migration.version}: ${migration.name}`);
+        log.info(`Rolling back migration ${migration.version}: ${migration.name}`);
 
         this.db.beginTransaction();
 
@@ -167,9 +170,9 @@ export class MigrationManager {
 
         this.db.commitTransaction();
 
-        console.log(`Migration ${migration.version} rolled back successfully`);
+        log.info(`Migration ${migration.version} rolled back successfully`);
       } catch (error) {
-        console.error(`Failed to rollback migration ${migration.version}:`, error);
+        log.error(`Failed to rollback migration ${migration.version}:`, error);
         this.db.rollbackTransaction();
         throw error;
       }

@@ -2,6 +2,9 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
 import { KnowledgeBase, ExecuteResult } from '../../shared/types';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('Database');
 
 // Embedded schema to avoid file loading issues in packaged app
 const DATABASE_SCHEMA = `-- FSP's Study Tools - Database Schema
@@ -219,9 +222,9 @@ export class DatabaseManager {
       // Apply schema
       await this.applySchema();
 
-      console.log('Database initialized successfully');
+      log.info('Database initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize database:', error);
+      log.error('Failed to initialize database:', error);
       throw error;
     }
   }
@@ -242,7 +245,7 @@ export class DatabaseManager {
     try {
       this.db.exec(schema);
     } catch (error) {
-      console.error('Failed to apply database schema:', error);
+      log.error('Failed to apply database schema:', error);
       throw error;
     }
   }
@@ -260,7 +263,7 @@ export class DatabaseManager {
       const rows = params ? stmt.all(...params) : stmt.all();
       return rows as T[];
     } catch (error) {
-      console.error('Query failed:', sql, params, error);
+      log.error('Query failed:', sql, params, error);
       throw error;
     }
   }
@@ -282,7 +285,7 @@ export class DatabaseManager {
         lastInsertRowid: Number(result.lastInsertRowid),
       };
     } catch (error) {
-      console.error('Execute failed:', sql, params, error);
+      log.error('Execute failed:', sql, params, error);
       throw error;
     }
   }
@@ -484,13 +487,73 @@ export class DatabaseManager {
   }
 
   /**
+   * Execute a function within a transaction with automatic commit/rollback.
+   * This is the preferred way to run multiple operations atomically.
+   *
+   * @param fn The function to execute within the transaction
+   * @returns The result of the function
+   * @throws Rolls back and re-throws any errors from the function
+   */
+  transaction<T>(fn: () => T): T {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    // Use better-sqlite3's built-in transaction support for safety
+    const transactionFn = this.db.transaction(fn);
+    return transactionFn();
+  }
+
+  /**
+   * Execute an async function within a transaction with automatic commit/rollback.
+   * Note: For truly async operations, uses manual BEGIN/COMMIT/ROLLBACK.
+   * Prefer the synchronous transaction() method when possible.
+   *
+   * @param fn The async function to execute within the transaction
+   * @returns The result of the function
+   * @throws Rolls back and re-throws any errors from the function
+   */
+  async transactionAsync<T>(fn: () => Promise<T>): Promise<T> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    this.beginTransaction();
+    try {
+      const result = await fn();
+      this.commitTransaction();
+      return result;
+    } catch (error) {
+      this.rollbackTransaction();
+      throw error;
+    }
+  }
+
+  /**
+   * Execute multiple SQL statements atomically (batch insert/update).
+   * Each statement should be an object with sql and optional params.
+   *
+   * @param statements Array of { sql, params } objects
+   * @returns Array of ExecuteResult for each statement
+   */
+  executeBatch(statements: Array<{ sql: string; params?: unknown[] }>): ExecuteResult[] {
+    return this.transaction(() => {
+      const results: ExecuteResult[] = [];
+      for (const stmt of statements) {
+        results.push(this.execute(stmt.sql, stmt.params));
+      }
+      return results;
+    });
+  }
+
+  /**
    * Close the database connection
    */
   async close(): Promise<void> {
     if (this.db) {
       this.db.close();
       this.db = null;
-      console.log('Database connection closed');
+      log.info('Database connection closed');
     }
   }
 

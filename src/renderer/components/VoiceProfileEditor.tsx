@@ -8,10 +8,14 @@
  * - Add new audio samples (file upload or record in-app)
  * - Remove audio samples
  * - Trigger retraining when samples change
+ * - Access the advanced Voice Training Studio
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import './VoiceProfileEditor.css';
+import VoiceTrainingStudio from './VoiceTrainingStudio';
+import './VoiceTrainingStudio.css';
+import type { OpenVoiceProfile } from '../hooks/useOpenVoice';
 
 export interface VoiceTrainingSample {
   id: string;
@@ -37,6 +41,14 @@ export interface VoiceProfile {
   created?: string;
 }
 
+export interface TrainingRetryInfo {
+  profileId: string;
+  attempt: number;
+  maxAttempts: number;
+  lastError: string;
+  message: string;
+}
+
 interface VoiceProfileEditorProps {
   profile: VoiceProfile;
   onClose: () => void;
@@ -44,6 +56,8 @@ interface VoiceProfileEditorProps {
   onRetrain: (profileId: string) => Promise<void>;
   systemVoices: SpeechSynthesisVoice[];
   isLoading?: boolean;
+  trainingRetry?: TrainingRetryInfo | null;
+  openvoiceProfile?: OpenVoiceProfile | null;
 }
 
 declare global {
@@ -61,7 +75,18 @@ export function VoiceProfileEditor({
   onRetrain,
   systemVoices,
   isLoading = false,
+  trainingRetry = null,
+  openvoiceProfile = null,
 }: VoiceProfileEditorProps) {
+  // Debug logging
+  console.log('[VoiceProfileEditor] Props received:', {
+    profileId: profile.id,
+    profileName: profile.name,
+    openvoiceProfileId: profile.openvoiceProfileId,
+    openvoiceProfile: openvoiceProfile ? { id: openvoiceProfile.id, name: openvoiceProfile.name } : null,
+    profileType: profile.type
+  });
+
   const [editedProfile, setEditedProfile] = useState<VoiceProfile>({ ...profile });
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -70,7 +95,8 @@ export function VoiceProfileEditor({
   const [samplesChanged, setSamplesChanged] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'details' | 'samples' | 'record'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'samples' | 'record' | 'studio'>('details');
+  const [showStudio, setShowStudio] = useState(false);
   const [validationResult, setValidationResult] = useState<{
     valid: boolean;
     summary?: {
@@ -372,6 +398,19 @@ export function VoiceProfileEditor({
               >
                 Record New
               </button>
+              <button
+                className={`editor-tab studio-tab ${activeTab === 'studio' ? 'active' : ''}`}
+                onClick={() => {
+                  if (openvoiceProfile) {
+                    setShowStudio(true);
+                  } else {
+                    setError('OpenVoice profile not available. Please ensure OpenVoice service is running and try again.');
+                  }
+                }}
+                title={openvoiceProfile ? 'Open Training Studio' : 'OpenVoice profile not loaded'}
+              >
+                Training Studio
+              </button>
             </>
           )}
         </div>
@@ -426,6 +465,15 @@ export function VoiceProfileEditor({
                       {editedProfile.trainingStatus === 'pending' && 'Waiting for training'}
                       {editedProfile.trainingStatus === 'failed' && 'Training failed'}
                     </div>
+                    {/* Show training retry info if applicable to this profile */}
+                    {trainingRetry && trainingRetry.profileId === (editedProfile.openvoiceProfileId || editedProfile.id) && (
+                      <div className="training-retry-message">
+                        {trainingRetry.message}
+                        <span className="retry-details">
+                          (Last error: {trainingRetry.lastError})
+                        </span>
+                      </div>
+                    )}
                     {editedProfile.trainingError && (
                       <div className="training-error-message">
                         {editedProfile.trainingError}
@@ -635,6 +683,44 @@ export function VoiceProfileEditor({
           </button>
         </div>
       </div>
+
+      {/* Voice Training Studio Modal */}
+      {showStudio && openvoiceProfile && (
+        <div className="modal-overlay studio-overlay" onClick={() => setShowStudio(false)}>
+          <div onClick={e => e.stopPropagation()}>
+            <VoiceTrainingStudio
+              profile={openvoiceProfile}
+              onClose={() => setShowStudio(false)}
+              onSaveRecording={async (audioPath: string) => {
+                // Add the new recording to the profile's samples
+                const newSample: VoiceTrainingSample = {
+                  id: `sample-${Date.now()}`,
+                  name: audioPath.split(/[\\/]/).pop() || 'Recording',
+                  path: audioPath,
+                  duration: 0, // Will be computed by validation
+                  createdAt: new Date().toISOString(),
+                };
+                setEditedProfile(prev => ({
+                  ...prev,
+                  trainingSamples: [...(prev.trainingSamples || []), newSample],
+                }));
+                setSamplesChanged(true);
+              }}
+              onDeleteSample={async (samplePath: string) => {
+                // Find and remove the sample by path
+                const sampleToRemove = editedProfile.trainingSamples?.find(s => s.path === samplePath);
+                if (sampleToRemove) {
+                  await removeSample(sampleToRemove.id);
+                }
+              }}
+              onStartTraining={async () => {
+                await onRetrain(profile.openvoiceProfileId || profile.id);
+              }}
+              isTraining={editedProfile.trainingStatus === 'training'}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

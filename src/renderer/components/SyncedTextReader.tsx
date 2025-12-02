@@ -436,6 +436,81 @@ export function SyncedTextReader({
     onSpeakingEnd?.();
   }, [onSpeakingEnd]);
 
+  // Seek to a specific word during playback
+  const seekToWord = useCallback((targetIndex: number) => {
+    if (targetIndex < 0 || targetIndex >= words.length) return;
+
+    // Handle OpenVoice audio seek
+    if (audioRef.current && audioRef.current.duration) {
+      // Calculate approximate time position based on word weights
+      const calculateWordWeight = (word: string): number => {
+        let weight = word.length;
+        if (/[.!?]$/.test(word)) weight += 4;
+        else if (/[,;:]$/.test(word)) weight += 2;
+        return Math.max(weight, 1);
+      };
+
+      const wordWeights = words.map(calculateWordWeight);
+      const totalWeight = wordWeights.reduce((sum, w) => sum + w, 0);
+      const totalDuration = audioRef.current.duration;
+
+      // Calculate time position for target word
+      let targetTime = 0;
+      for (let i = 0; i < targetIndex; i++) {
+        targetTime += (wordWeights[i] / totalWeight) * totalDuration;
+      }
+
+      // Seek to the position
+      audioRef.current.currentTime = targetTime;
+      setCurrentWordIndex(targetIndex);
+      return;
+    }
+
+    // Handle Web Speech API - need to restart from the target word
+    if (window.speechSynthesis && isSpeaking) {
+      // Stop current speech
+      window.speechSynthesis.cancel();
+
+      // Create text from target word onwards
+      const remainingText = words.slice(targetIndex).join(' ');
+      const utterance = new SpeechSynthesisUtterance(remainingText);
+      utterance.rate = voiceSettings.rate;
+      utterance.pitch = 1 + voiceSettings.pitch / 100;
+      utterance.volume = Math.min(voiceSettings.volume / 100, 1.0);
+
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
+
+      // Adjust the word boundary index offset for the remaining text
+      const wordOffset = targetIndex;
+      wordBoundaryIndexRef.current = 0;
+
+      utterance.onboundary = (event) => {
+        if (event.name === 'word') {
+          const newIndex = wordOffset + wordBoundaryIndexRef.current;
+          setCurrentWordIndex(newIndex);
+          if (onWordChange && words[newIndex]) {
+            onWordChange(newIndex, words[newIndex]);
+          }
+          wordBoundaryIndexRef.current++;
+        }
+      };
+
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        setIsPaused(false);
+        setCurrentWordIndex(-1);
+        wordBoundaryIndexRef.current = 0;
+        onSpeakingEnd?.();
+      };
+
+      utteranceRef.current = utterance;
+      setCurrentWordIndex(targetIndex);
+      window.speechSynthesis.speak(utterance);
+    }
+  }, [words, voiceSettings, selectedVoice, isSpeaking, onWordChange, onSpeakingEnd]);
+
   const getWordClassName = (index: number): string => {
     if (!highlightSettings.enabled || currentWordIndex < 0) {
       return 'synced-word';
@@ -586,8 +661,8 @@ export function SyncedTextReader({
               className={getWordClassName(index)}
               style={getWordStyle(index)}
               onClick={() => {
-                if (isSpeaking) {
-                  // TODO: Implement click-to-seek functionality
+                if (isSpeaking && !isPaused) {
+                  seekToWord(index);
                 }
               }}
             >

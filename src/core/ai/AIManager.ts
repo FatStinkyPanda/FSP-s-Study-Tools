@@ -14,6 +14,9 @@ import {
   AIProviderError,
   LocalModelConfig,
 } from '../../shared/ai-types';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('AIManager');
 
 // Fallback configuration for a provider
 interface ProviderFallbackConfig {
@@ -258,7 +261,7 @@ export class AIManager {
 
         // Log if we used a fallback
         if (attempts.length > 0) {
-          console.log(`[AIManager] Successfully used fallback: ${option.provider}/${option.model} after ${attempts.length} failed attempt(s)`);
+          log.info(`Successfully used fallback: ${option.provider}/${option.model} after ${attempts.length} failed attempt(s)`);
         }
 
         return result;
@@ -271,7 +274,7 @@ export class AIManager {
           break;
         }
 
-        console.log(`[AIManager] Retryable error with ${option.provider}/${option.model}: ${lastError.message}. Trying fallback...`);
+        log.debug(`Retryable error with ${option.provider}/${option.model}: ${lastError.message}. Trying fallback...`);
       }
     }
 
@@ -347,7 +350,7 @@ export class AIManager {
 
         // Log if we're using a fallback
         if (attempts.length > 0) {
-          console.log(`[AIManager] Trying fallback: ${option.provider}/${option.model} after ${attempts.length} failed attempt(s)`);
+          log.info(`Trying fallback: ${option.provider}/${option.model} after ${attempts.length} failed attempt(s)`);
         }
 
         yield* provider.createStreamingCompletion(requestWithModel);
@@ -361,7 +364,7 @@ export class AIManager {
           break;
         }
 
-        console.log(`[AIManager] Retryable error with ${option.provider}/${option.model}: ${lastError.message}. Trying fallback...`);
+        log.debug(`Retryable error with ${option.provider}/${option.model}: ${lastError.message}. Trying fallback...`);
       }
     }
 
@@ -394,7 +397,7 @@ export class AIManager {
           const models = await provider.listModels();
           result.set(type, models);
         } catch (error) {
-          console.error(`Failed to list models for ${type}:`, error);
+          log.error(`Failed to list models for ${type}:`, error);
           result.set(type, []);
         }
       }
@@ -414,7 +417,7 @@ export class AIManager {
         const isValid = await provider.validateApiKey();
         results.set(type, isValid);
       } catch (error) {
-        console.error(`Failed to validate ${type}:`, error);
+        log.error(`Failed to validate ${type}:`, error);
         results.set(type, false);
       }
     }

@@ -58,6 +58,12 @@ export class PPTXParser implements IParser {
       // Extract metadata from docProps/core.xml
       const metadata = await this.extractMetadata(zip, filePath);
 
+      // Extract all images from ppt/media/ directory upfront
+      const allImages = await this.extractAllImages(zip);
+      if (allImages.size > 0) {
+        console.log(`Found ${allImages.size} images in PPTX media directory`);
+      }
+
       // Get list of slide files
       const slideFiles: string[] = [];
       zip.forEach((relativePath: string) => {
@@ -81,7 +87,9 @@ export class PPTXParser implements IParser {
         try {
           const slideXml = await zip.file(slideFile)?.async('text');
           if (slideXml) {
-            const { slideText, slideElements } = this.parseSlideXml(slideXml, slideNum);
+            // Build relationship map for this slide to resolve image references
+            const relMap = await this.buildRelationshipMap(zip, slideNum);
+            const { slideText, slideElements } = this.parseSlideXml(slideXml, slideNum, relMap, allImages);
             textParts.push(`--- Slide ${slideNum} ---\n${slideText}`);
             elements.push(...slideElements);
           }
@@ -182,7 +190,9 @@ export class PPTXParser implements IParser {
    */
   private parseSlideXml(
     xml: string,
-    slideNum: number
+    slideNum: number,
+    relMap: Map<string, string>,
+    allImages: Map<string, { data: string; mimeType: string }>
   ): { slideText: string; slideElements: ParsedContentElement[] } {
     const elements: ParsedContentElement[] = [];
     const textParts: string[] = [];
@@ -228,14 +238,32 @@ export class PPTXParser implements IParser {
       }
     }
 
-    // Check for images
+    // Check for images and resolve actual image data
     const imageRegex = /<a:blip[^>]+r:embed="([^"]+)"/g;
+    let imageIndex = 1;
     while ((match = imageRegex.exec(xml)) !== null) {
-      elements.push({
-        type: 'image',
-        src: `embedded:${match[1]}`,
-        alt: `Slide ${slideNum} image`,
-      });
+      const rId = match[1];
+      const mediaFileName = relMap.get(rId);
+
+      if (mediaFileName && allImages.has(mediaFileName)) {
+        // Found actual image data - use base64 data URL
+        const imageInfo = allImages.get(mediaFileName)!;
+        elements.push({
+          type: 'image',
+          src: `data:${imageInfo.mimeType};base64,${imageInfo.data}`,
+          alt: `Slide ${slideNum} - Image ${imageIndex}`,
+        });
+        console.log(`Resolved image ${rId} -> ${mediaFileName} on slide ${slideNum}`);
+      } else {
+        // Fallback to reference (shouldn't happen often)
+        elements.push({
+          type: 'image',
+          src: `embedded:${rId}`,
+          alt: `Slide ${slideNum} - Image ${imageIndex} (unresolved)`,
+        });
+        console.warn(`Could not resolve image ${rId} on slide ${slideNum}`);
+      }
+      imageIndex++;
     }
 
     return {
@@ -317,6 +345,92 @@ export class PPTXParser implements IParser {
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&apos;/g, "'");
+  }
+
+  /**
+   * Extract all images from ppt/media/ directory
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async extractAllImages(zip: any): Promise<Map<string, { data: string; mimeType: string }>> {
+    const images = new Map<string, { data: string; mimeType: string }>();
+
+    try {
+      const mediaFiles: string[] = [];
+      zip.forEach((relativePath: string) => {
+        if (relativePath.startsWith('ppt/media/')) {
+          mediaFiles.push(relativePath);
+        }
+      });
+
+      for (const mediaFile of mediaFiles) {
+        try {
+          const imageData = await zip.file(mediaFile)?.async('base64');
+          if (imageData) {
+            const fileName = path.basename(mediaFile);
+            const mimeType = this.getMimeType(mediaFile);
+            images.set(fileName, { data: imageData, mimeType });
+          }
+        } catch (imgError) {
+          console.warn(`Failed to extract image ${mediaFile}:`, imgError);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to extract images from PPTX:', error);
+    }
+
+    return images;
+  }
+
+  /**
+   * Build relationship map for a slide (rId -> media filename)
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async buildRelationshipMap(zip: any, slideIndex: number): Promise<Map<string, string>> {
+    const relMap = new Map<string, string>();
+
+    try {
+      const relsPath = `ppt/slides/_rels/slide${slideIndex}.xml.rels`;
+      const relsXml = await zip.file(relsPath)?.async('text');
+
+      if (relsXml) {
+        // Parse relationships: <Relationship Id="rId2" Target="../media/image1.png" Type="...image"/>
+        const relRegex = /<Relationship[^>]+Id="([^"]+)"[^>]+Target="([^"]+)"[^>]*>/g;
+        let match;
+        while ((match = relRegex.exec(relsXml)) !== null) {
+          const rId = match[1];
+          const target = match[2];
+          // Only include media files
+          if (target.includes('/media/') || target.includes('\\media\\')) {
+            const fileName = path.basename(target);
+            relMap.set(rId, fileName);
+          }
+        }
+      }
+    } catch {
+      // Relationship extraction is non-critical
+    }
+
+    return relMap;
+  }
+
+  /**
+   * Get MIME type from file extension
+   */
+  private getMimeType(filePath: string): string {
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.bmp': 'image/bmp',
+      '.tiff': 'image/tiff',
+      '.tif': 'image/tiff',
+      '.wmf': 'image/x-wmf',
+      '.emf': 'image/x-emf',
+      '.svg': 'image/svg+xml',
+    };
+    return mimeTypes[ext] || 'image/png';
   }
 
   /**

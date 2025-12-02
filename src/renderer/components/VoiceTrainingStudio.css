@@ -1,0 +1,1034 @@
+/**
+ * VoiceTrainingStudio Component Styles
+ *
+ * Comprehensive styles for voice training interface including:
+ * - Script selection and display
+ * - Word highlighting for speech detection
+ * - Volume meter visualization
+ * - Recording interface
+ * - Sample management
+ */
+
+/* Main Container */
+.voice-training-studio {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-highlight);
+  border-radius: 12px;
+  width: 95%;
+  max-width: 900px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+/* Header */
+.studio-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-primary);
+}
+
+.studio-title h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--text-primary);
+}
+
+.studio-title .profile-name {
+  font-size: 0.85rem;
+  color: var(--accent-primary);
+  margin-left: 12px;
+}
+
+.studio-header .close-button {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.studio-header .close-button:hover {
+  background: var(--card-hover);
+  color: var(--text-primary);
+  border-color: var(--border-highlight);
+}
+
+/* Microphone Status Bar */
+.mic-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+  gap: 16px;
+}
+
+.mic-status-bar.active {
+  background: rgba(74, 222, 128, 0.05);
+}
+
+.mic-status-bar.inactive {
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.mic-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mic-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: background 0.3s;
+}
+
+.mic-dot.active {
+  background: var(--success);
+  animation: pulse-mic 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-mic {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(74, 222, 128, 0); }
+}
+
+.mic-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.volume-meter-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  max-width: 300px;
+}
+
+.volume-meter {
+  flex: 1;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.volume-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  min-width: 40px;
+  text-align: right;
+}
+
+.retry-mic-btn {
+  background: var(--accent-primary);
+  border: none;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: opacity 0.2s;
+}
+
+.retry-mic-btn:hover {
+  opacity: 0.9;
+}
+
+/* Tab Navigation */
+.studio-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 20px;
+  gap: 4px;
+  background: var(--bg-primary);
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  padding: 14px 20px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+  background: var(--card-hover);
+}
+
+.tab-btn.active {
+  color: var(--accent-primary);
+  border-bottom-color: var(--accent-primary);
+}
+
+/* Studio Content */
+.studio-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+/* Scripts Tab */
+.scripts-tab {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 20px;
+  height: 100%;
+}
+
+.script-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.category-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.category-selector label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.category-selector select {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.category-selector select:focus {
+  outline: none;
+  border-color: var(--input-focus);
+}
+
+.script-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.script-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.script-item:hover {
+  border-color: var(--border-highlight);
+  background: var(--card-hover);
+}
+
+.script-item.selected {
+  border-color: var(--accent-primary);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.script-title {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.script-duration {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: var(--bg-primary);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+/* Script Display */
+.script-display {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.script-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.script-description {
+  margin: 0 0 8px 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.script-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.script-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.highlight-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.highlight-toggle input {
+  cursor: pointer;
+  accent-color: var(--accent-primary);
+}
+
+.listen-btn,
+.reset-btn {
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.listen-btn.start {
+  background: var(--success);
+  border: none;
+  color: white;
+}
+
+.listen-btn.start:hover:not(:disabled) {
+  background: #22c55e;
+}
+
+.listen-btn.start:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.listen-btn.stop {
+  background: var(--error);
+  border: none;
+  color: white;
+}
+
+.listen-btn.stop:hover {
+  background: #dc2626;
+}
+
+.reset-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.reset-btn:hover {
+  background: var(--card-hover);
+  border-color: var(--border-highlight);
+  color: var(--text-primary);
+}
+
+.recognition-warning {
+  font-size: 0.8rem;
+  color: var(--warning);
+  font-style: italic;
+}
+
+.recognition-error {
+  padding: 10px 14px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--error);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--error);
+}
+
+.recognition-warning.initializing {
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid var(--warning);
+  padding: 10px 14px;
+  border-radius: 6px;
+  color: var(--warning);
+  animation: pulse 1.5s infinite;
+}
+
+/* Listening Indicator */
+.listening-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid var(--success);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--success);
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+
+.pulse-dot.red {
+  background: var(--error);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.7; }
+}
+
+/* Script Text */
+.script-text {
+  font-size: 1.1rem;
+  line-height: 1.8;
+  color: var(--text-primary);
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--bg-primary);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.script-word {
+  transition: all 0.2s;
+  padding: 2px 0;
+  border-radius: 2px;
+}
+
+.script-word.spoken {
+  color: var(--success);
+}
+
+.script-word.current {
+  background: var(--accent-primary);
+  color: white;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.script-word.next {
+  background: rgba(99, 102, 241, 0.2);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+/* Script Progress */
+.script-progress {
+  position: relative;
+  background: var(--bg-primary);
+  border-radius: 4px;
+  height: 24px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.script-progress .progress-bar {
+  height: 100%;
+  background: var(--accent-gradient);
+  transition: width 0.3s;
+}
+
+.script-progress .progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* No Script Selected */
+.no-script-selected {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 60px 20px;
+  background: var(--card-bg);
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+}
+
+.no-script-selected p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.no-script-selected .hint {
+  font-size: 0.85rem;
+  margin-top: 8px;
+  max-width: 400px;
+}
+
+/* Record Tab */
+.record-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.recording-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px;
+  gap: 24px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.record-button-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.record-button-container.recording {
+  animation: pulse-recording 2s ease-in-out infinite;
+}
+
+@keyframes pulse-recording {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+.record-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px 32px;
+  border-radius: 50px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.record-tab .record-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.record-tab .record-btn .record-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: white;
+}
+
+.record-tab .record-btn .stop-icon {
+  width: 14px;
+  height: 14px;
+  background: white;
+  border-radius: 2px;
+}
+
+.record-tab .record-btn:not(.stop) {
+  background: var(--error);
+  color: white;
+}
+
+.record-tab .record-btn:not(.stop):hover:not(:disabled) {
+  background: #dc2626;
+  transform: scale(1.05);
+}
+
+.record-tab .record-btn.stop {
+  background: var(--text-muted);
+  color: white;
+}
+
+.record-tab .record-btn.stop:hover {
+  background: #525252;
+}
+
+.recording-timer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 2.5rem;
+  font-weight: 300;
+  color: var(--text-primary);
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+/* Recorded Preview */
+.recorded-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: 100%;
+}
+
+.recorded-preview h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+
+.recorded-preview audio {
+  width: 100%;
+  max-width: 400px;
+  height: 48px;
+}
+
+.preview-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.preview-actions .save-btn {
+  background: var(--success);
+  border: none;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.preview-actions .save-btn:hover {
+  background: #22c55e;
+}
+
+.preview-actions .discard-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.preview-actions .discard-btn:hover {
+  background: var(--card-hover);
+  border-color: var(--border-highlight);
+}
+
+/* Recording Tips */
+.recording-tips {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.recording-tips h4 {
+  margin: 0 0 12px 0;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.recording-tips ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.recording-tips li {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 8px 0;
+  line-height: 1.4;
+}
+
+/* Samples Tab */
+.samples-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.samples-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.samples-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.training-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-badge {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.status-badge.ready {
+  background: rgba(74, 222, 128, 0.15);
+  color: var(--success);
+}
+
+.status-badge.extracting {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--warning);
+  animation: pulse 1.5s infinite;
+}
+
+.status-badge.failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--error);
+}
+
+.status-badge.pending {
+  background: var(--card-bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+.train-btn {
+  background: var(--accent-gradient);
+  border: none;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: opacity 0.2s;
+}
+
+.train-btn:hover {
+  opacity: 0.9;
+}
+
+/* No Samples */
+.no-samples {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 60px 20px;
+  background: var(--card-bg);
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+}
+
+.no-samples p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.no-samples .hint {
+  font-size: 0.85rem;
+  margin-top: 8px;
+  max-width: 400px;
+}
+
+.no-samples .add-sample-btn {
+  margin-top: 16px;
+  background: var(--accent-gradient);
+  border: none;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: opacity 0.2s;
+}
+
+.no-samples .add-sample-btn:hover {
+  opacity: 0.9;
+}
+
+/* Samples List */
+.samples-tab .samples-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.samples-tab .sample-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.samples-tab .sample-item:hover {
+  border-color: var(--border-highlight);
+}
+
+.samples-tab .sample-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sample-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.samples-tab .sample-name {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.samples-tab .sample-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.samples-tab .play-btn,
+.samples-tab .delete-btn {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.samples-tab .play-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.samples-tab .play-btn:hover {
+  background: var(--card-hover);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.samples-tab .delete-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.samples-tab .delete-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: var(--error);
+  color: var(--error);
+}
+
+/* Samples Summary */
+.samples-tab .samples-summary {
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.samples-tab .samples-summary p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.samples-tab .samples-summary .recommendation {
+  color: var(--warning);
+  margin-top: 8px;
+  font-style: italic;
+}
+
+/* Training Overlay */
+.training-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  border-radius: 12px;
+}
+
+.training-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 40px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 1px solid var(--border-highlight);
+}
+
+.training-progress .spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.training-progress p {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.training-progress .progress-percent {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .voice-training-studio {
+    width: 98%;
+    max-height: 95vh;
+  }
+
+  .scripts-tab {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .script-list {
+    max-height: 200px;
+  }
+
+  .script-text {
+    font-size: 1rem;
+    max-height: 250px;
+  }
+
+  .studio-tabs {
+    padding: 0 12px;
+  }
+
+  .tab-btn {
+    padding: 12px 14px;
+    font-size: 0.85rem;
+  }
+
+  .mic-status-bar {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .volume-meter-container {
+    order: 3;
+    width: 100%;
+    max-width: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .studio-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .studio-header .close-button {
+    align-self: flex-end;
+  }
+
+  .script-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .listen-btn,
+  .reset-btn {
+    width: 100%;
+    text-align: center;
+  }
+
+  .recording-timer {
+    font-size: 2rem;
+  }
+
+  .record-btn {
+    padding: 14px 24px;
+    font-size: 0.9rem;
+  }
+}

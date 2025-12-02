@@ -1,5 +1,8 @@
 import { DatabaseManager } from '../database/DatabaseManager';
 import { SecureStorage } from '../security';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('Settings');
 
 // Voice Profile interface (matching shared/voice-types.ts)
 export interface VoiceProfile {
@@ -127,7 +130,7 @@ export class SettingsManager {
         }
       }
     } catch (error) {
-      console.error('Failed to load settings cache:', error);
+      log.error('Failed to load settings cache:', error);
     }
   }
 
@@ -286,8 +289,8 @@ export class SettingsManager {
     settings.voice_pitch = this.getNumber('voice_pitch') || 1.0;
     settings.voice_volume = this.getNumber('voice_volume') || 1.0;
 
-    console.log('[SettingsManager.getAll] voice_profiles:', settings.voice_profiles?.length || 0, 'profiles');
-    console.log('[SettingsManager.getAll] selected_voice_profile:', settings.selected_voice_profile);
+    log.debug('getAll - voice_profiles:', settings.voice_profiles?.length || 0, 'profiles');
+    log.debug('getAll - selected_voice_profile:', settings.selected_voice_profile);
 
     return settings;
   }
@@ -408,12 +411,12 @@ export class SettingsManager {
 
     // Voice Settings
     if (settings.voice_profiles !== undefined) {
-      console.log('[SettingsManager.updateAll] Saving voice_profiles:', settings.voice_profiles?.length || 0, 'profiles');
-      console.log('[SettingsManager.updateAll] Voice profiles data:', JSON.stringify(settings.voice_profiles, null, 2));
+      log.debug('updateAll - Saving voice_profiles:', settings.voice_profiles?.length || 0, 'profiles');
+      log.debug('updateAll - Voice profiles data:', JSON.stringify(settings.voice_profiles, null, 2));
       this.set('voice_profiles', settings.voice_profiles);
     }
     if (settings.selected_voice_profile !== undefined) {
-      console.log('[SettingsManager.updateAll] Saving selected_voice_profile:', settings.selected_voice_profile);
+      log.debug('updateAll - Saving selected_voice_profile:', settings.selected_voice_profile);
       this.set('selected_voice_profile', settings.selected_voice_profile);
     }
     if (settings.default_system_voice !== undefined) {
@@ -484,7 +487,7 @@ export class SettingsManager {
     for (const provider of providers) {
       const storedKey = this.getString(`${provider}_api_key`);
       if (storedKey && !SecureStorage.isEncrypted(storedKey)) {
-        console.log(`Migrating ${provider} API key to secure storage`);
+        log.info(`Migrating ${provider} API key to secure storage`);
         this.setApiKey(provider, storedKey);
       }
     }

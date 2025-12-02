@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 
 const RESULTS_PER_PAGE = 10;
 
@@ -112,25 +113,29 @@ function SearchResults({ onNavigateToSection, onClose }: SearchResultsProps) {
 
   const getSnippet = (content: string, maxLength = 200): string => {
     // Content already has <mark> tags for highlighting from FTS5
-    if (content.length <= maxLength) {
-      return content;
+    let snippet = content;
+
+    if (content.length > maxLength) {
+      // Find the first <mark> tag to center the snippet around the match
+      const markIndex = content.indexOf('<mark>');
+      if (markIndex === -1) {
+        snippet = content.substring(0, maxLength) + '...';
+      } else {
+        // Center the snippet around the match
+        const start = Math.max(0, markIndex - 50);
+        const end = Math.min(content.length, start + maxLength);
+
+        snippet = content.substring(start, end);
+        if (start > 0) snippet = '...' + snippet;
+        if (end < content.length) snippet = snippet + '...';
+      }
     }
 
-    // Find the first <mark> tag to center the snippet around the match
-    const markIndex = content.indexOf('<mark>');
-    if (markIndex === -1) {
-      return content.substring(0, maxLength) + '...';
-    }
-
-    // Center the snippet around the match
-    const start = Math.max(0, markIndex - 50);
-    const end = Math.min(content.length, start + maxLength);
-
-    let snippet = content.substring(start, end);
-    if (start > 0) snippet = '...' + snippet;
-    if (end < content.length) snippet = snippet + '...';
-
-    return snippet;
+    // Sanitize the output, allowing only <mark> tags for highlighting
+    return DOMPurify.sanitize(snippet, {
+      ALLOWED_TAGS: ['mark'],
+      ALLOWED_ATTR: [],
+    });
   };
 
   const formatPath = (result: SearchResult): string => {

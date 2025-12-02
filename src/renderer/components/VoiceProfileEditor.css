@@ -192,6 +192,29 @@
   border-radius: 4px;
 }
 
+.training-retry-message {
+  color: var(--warning, #fbbf24);
+  font-size: 0.8rem;
+  margin-top: 4px;
+  padding: 8px 12px;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 4px;
+  animation: pulse-warning 1.5s ease-in-out infinite;
+}
+
+.training-retry-message .retry-details {
+  display: block;
+  font-size: 0.75rem;
+  opacity: 0.8;
+  margin-top: 2px;
+}
+
+@keyframes pulse-warning {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
 /* Samples Summary */
 .samples-summary {
   color: var(--text-secondary);
@@ -605,6 +628,28 @@
   content: "-";
   position: absolute;
   left: 0;
+}
+
+/* Training Studio Tab Button */
+.editor-tab.studio-tab {
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid var(--accent-primary);
+  border-radius: 6px;
+  margin-left: auto;
+}
+
+.editor-tab.studio-tab:hover {
+  background: rgba(99, 102, 241, 0.2);
+}
+
+.editor-tab.studio-tab.active {
+  background: var(--accent-primary);
+  color: white;
+}
+
+/* Studio Overlay */
+.modal-overlay.studio-overlay {
+  z-index: 1100;
 }
 
 /* Responsive */

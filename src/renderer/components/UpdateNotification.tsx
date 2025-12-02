@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 
 interface UpdateInfo {
   version?: string;
@@ -290,7 +291,7 @@ function UpdateNotification() {
               </button>
             </div>
             <div className="release-notes-content">
-              <div dangerouslySetInnerHTML={{ __html: updateInfo.releaseNotes }} />
+              <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(updateInfo.releaseNotes || '') }} />
             </div>
             <div className="release-notes-footer">
               <button

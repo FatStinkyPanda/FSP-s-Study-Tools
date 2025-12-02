@@ -1,4 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createLogger } from '../shared/logger';
+
+const log = createLogger('ChatPanel');
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -97,7 +100,7 @@ function ChatPanel({
   useEffect(() => {
     if (knowledgeBaseId !== undefined && lastKbIdRef.current !== undefined &&
         knowledgeBaseId !== lastKbIdRef.current && conversationId !== null) {
-      console.log('[ChatPanel] KB changed, resetting conversation:', {
+      log.debug('KB changed, resetting conversation:', {
         from: lastKbIdRef.current,
         to: knowledgeBaseId
       });
@@ -117,7 +120,7 @@ function ChatPanel({
     );
 
     if (shouldInitialize) {
-      console.log('[ChatPanel] Initializing conversation with KB structure:', {
+      log.debug('Initializing conversation with KB structure:', {
         isGlobalMode,
         knowledgeBaseId,
         hasKbStructure: !!kbStructure,
@@ -277,15 +280,15 @@ IMPORTANT: You have full access to the knowledge base structure and content. Whe
 
       const systemMessage = buildSystemMessage();
 
-      // Debug: Log the system message to see KB structure
-      console.log('[ChatPanel] System message length:', systemMessage.length);
-      console.log('[ChatPanel] kbStructure provided:', !!kbStructure);
-      console.log('[ChatPanel] kbStructure modules:', kbStructure?.modules?.length || 0);
+      // Log KB structure for debugging
+      log.debug('System message length:', systemMessage.length);
+      log.debug('kbStructure provided:', !!kbStructure);
+      log.debug('kbStructure modules:', kbStructure?.modules?.length || 0);
       if (kbStructure && kbStructure.modules.length > 0) {
-        console.log('[ChatPanel] First module:', kbStructure.modules[0].title);
-        console.log('[ChatPanel] First module chapters:', kbStructure.modules[0].chapters.map(c => c.title));
+        log.debug('First module:', kbStructure.modules[0].title);
+        log.debug('First module chapters:', kbStructure.modules[0].chapters.map(c => c.title));
       }
-      console.log('[ChatPanel] System message preview:', systemMessage.substring(0, 500));
+      log.debug('System message preview:', systemMessage.substring(0, 500));
 
       // For global mode, use 0 or null as the KB ID
       const kbIdForConversation = isGlobalMode ? 0 : knowledgeBaseId;
@@ -477,9 +480,9 @@ IMPORTANT: You have full access to the knowledge base structure and content. Whe
       // Build contextual message with search results
       let contextualMessage = '';
 
-      // Debug: Log what content is available
-      console.log('[ChatPanel] sendMessage - sectionContent length:', sectionContent?.length || 0);
-      console.log('[ChatPanel] sendMessage - currentTopic:', currentTopic || 'none');
+      // Log context for debugging
+      log.debug('sendMessage - sectionContent length:', sectionContent?.length || 0);
+      log.debug('sendMessage - currentTopic:', currentTopic || 'none');
 
       // Add the current section content that the student is viewing
       // This is the PRIMARY context - the actual material being studied

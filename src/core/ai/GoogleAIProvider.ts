@@ -7,6 +7,9 @@ import {
   AITool,
   AIToolCall,
 } from '../../shared/ai-types';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('GoogleAI');
 
 interface GoogleMessagePart {
   text?: string;
@@ -95,7 +98,7 @@ export class GoogleAIProvider extends BaseAIProvider {
       }
     }
 
-    console.log('[GoogleAI] Request with tools:', JSON.stringify(googleRequest, null, 2).substring(0, 1000));
+    log.debug('Request with tools:', JSON.stringify(googleRequest, null, 2).substring(0, 1000));
 
     const response = await this.makeRequest<GoogleResponse>(
       `${this.endpoint}/models/${request.model}:generateContent?key=${this.apiKey}`,
@@ -105,7 +108,7 @@ export class GoogleAIProvider extends BaseAIProvider {
       }
     );
 
-    console.log('[GoogleAI] Response:', JSON.stringify(response, null, 2).substring(0, 1000));
+    log.debug('Response:', JSON.stringify(response, null, 2).substring(0, 1000));
 
     return this.convertResponse(response);
   }

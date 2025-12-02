@@ -9,6 +9,9 @@ import {
   ContentElement,
   ParsedFile,
 } from '../../shared/types';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('XMLParser');
 
 export interface ParsedKnowledgeBase {
   metadata: {
@@ -34,7 +37,7 @@ export class XMLParser {
    */
   async parseKnowledgeBase(xmlContent: string): Promise<ParsedKnowledgeBase> {
     try {
-      console.log('[XMLParser] Parsing XML content, length:', xmlContent?.length || 0);
+      log.debug('Parsing XML content, length:', xmlContent?.length || 0);
 
       const parsed = await parseStringPromise(xmlContent, {
         explicitArray: false,
@@ -43,26 +46,26 @@ export class XMLParser {
         normalize: true,
       });
 
-      console.log('[XMLParser] Parsed result keys:', Object.keys(parsed || {}));
+      log.debug('Parsed result keys:', Object.keys(parsed || {}));
 
       if (!parsed.knowledge_base) {
         throw new Error('Invalid knowledge base XML: missing root element');
       }
 
       const kb = parsed.knowledge_base;
-      console.log('[XMLParser] KB keys:', Object.keys(kb || {}));
-      console.log('[XMLParser] kb.modules:', kb.modules);
-      console.log('[XMLParser] kb.modules type:', typeof kb.modules);
-      console.log('[XMLParser] kb.modules?.module:', kb.modules?.module);
-      console.log('[XMLParser] kb.modules?.module type:', typeof kb.modules?.module);
+      log.debug('KB keys:', Object.keys(kb || {}));
+      log.debug('kb.modules:', kb.modules);
+      log.debug('kb.modules type:', typeof kb.modules);
+      log.debug('kb.modules?.module:', kb.modules?.module);
+      log.debug('kb.modules?.module type:', typeof kb.modules?.module);
 
       // Extract metadata
       const metadata = this.extractMetadata(kb);
 
       // Parse modules
       const moduleData = kb.modules?.module || [];
-      console.log('[XMLParser] moduleData:', moduleData);
-      console.log('[XMLParser] moduleData is array:', Array.isArray(moduleData));
+      log.debug('moduleData:', moduleData);
+      log.debug('moduleData is array:', Array.isArray(moduleData));
       const modules = this.parseModules(moduleData);
 
       // Calculate statistics
@@ -103,21 +106,21 @@ export class XMLParser {
    * Parse modules from XML
    */
   private parseModules(moduleData: any): Module[] {
-    console.log('[XMLParser.parseModules] Input moduleData:', moduleData);
-    console.log('[XMLParser.parseModules] Is array:', Array.isArray(moduleData));
+    log.debug('parseModules - Input moduleData:', moduleData);
+    log.debug('parseModules - Is array:', Array.isArray(moduleData));
 
     const modules = Array.isArray(moduleData) ? moduleData : [moduleData];
-    console.log('[XMLParser.parseModules] After array conversion:', modules);
-    console.log('[XMLParser.parseModules] modules length:', modules.length);
+    log.debug('parseModules - After array conversion:', modules);
+    log.debug('parseModules - modules length:', modules.length);
 
     const result = modules
       .filter(m => m) // Filter out undefined/null
       .map((m, index) => {
-        console.log(`[XMLParser.parseModules] Processing module ${index}:`, m);
-        console.log(`[XMLParser.parseModules] Module ${index} keys:`, Object.keys(m || {}));
-        console.log(`[XMLParser.parseModules] Module ${index} chapters:`, m?.chapters);
-        console.log(`[XMLParser.parseModules] Module ${index} chapters?.chapter:`, m?.chapters?.chapter);
-        console.log(`[XMLParser.parseModules] Module ${index} files:`, m?.files);
+        log.debug(`parseModules - Processing module ${index}:`, m);
+        log.debug(`parseModules - Module ${index} keys:`, Object.keys(m || {}));
+        log.debug(`parseModules - Module ${index} chapters:`, m?.chapters);
+        log.debug(`parseModules - Module ${index} chapters?.chapter:`, m?.chapters?.chapter);
+        log.debug(`parseModules - Module ${index} files:`, m?.files);
 
         return {
           id: m.id || `module-${index + 1}`,
@@ -129,7 +132,7 @@ export class XMLParser {
         };
       });
 
-    console.log('[XMLParser.parseModules] Final result count:', result.length);
+    log.debug('parseModules - Final result count:', result.length);
     return result;
   }
 

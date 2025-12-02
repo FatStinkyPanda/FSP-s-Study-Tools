@@ -6,6 +6,7 @@ import { TXTParser } from './TXTParser';
 import { MarkdownParser } from './MarkdownParser';
 import { EPUBParser } from './EPUBParser';
 import { PPTXParser } from './PPTXParser';
+import { ImageParser } from './ImageParser';
 
 /**
  * Manager for coordinating document parsers
@@ -22,6 +23,7 @@ export class ParserManager {
     this.registerParser(new MarkdownParser());
     this.registerParser(new EPUBParser());
     this.registerParser(new PPTXParser());
+    this.registerParser(new ImageParser());
   }
 
   /**
@@ -120,7 +122,7 @@ export class ParserManager {
 
     return [
       {
-        name: 'All Supported Documents',
+        name: 'All Supported Files',
         extensions: allExtensions,
       },
       {
@@ -146,6 +148,10 @@ export class ParserManager {
       {
         name: 'Text Documents',
         extensions: ['txt', 'text'],
+      },
+      {
+        name: 'Images',
+        extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'tiff', 'tif'],
       },
     ];
   }

@@ -15,8 +15,11 @@
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "webpack --config webpack.renderer.config.js",
     "build:main": "tsc -p tsconfig.main.json",
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
     "package": "electron-forge package",
     "package:win": "electron-builder --win",
+    "package:win:unsigned": "electron-builder --win --dir -c.win.signAndEditExecutable=false",
     "make": "electron-forge make",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -44,6 +47,7 @@
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
     "@electron-forge/cli": "^7.2.0",
     "@electron-forge/maker-deb": "^7.2.0",
     "@electron-forge/maker-rpm": "^7.2.0",

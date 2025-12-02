@@ -11,8 +11,12 @@ import JasperChat from './components/JasperChat';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ErrorNotificationContainer, useErrorNotifications } from './components/ErrorNotification';
 import { toUserFriendlyError, errorToNotification, logError } from '../shared/errors';
-import { useOpenVoice, OpenVoiceStatus as OpenVoiceStatusType, OpenVoiceProfile as OpenVoiceProfileType } from './hooks/useOpenVoice';
+import { useOpenVoice } from './hooks/useOpenVoice';
 import VoiceProfileEditor from './components/VoiceProfileEditor';
+import { createLogger } from '../shared/logger';
+
+// Create logger for renderer
+const log = createLogger('App');
 
 interface ElectronAPI {
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
@@ -400,7 +404,7 @@ function App() {
     const loadProfiles = async () => {
       // Only refresh if service is running and we have custom voice profiles
       if (openVoice.status.running && settings.voice_profiles?.some(p => p.type === 'custom' && p.openvoiceProfileId)) {
-        console.log('[App] OpenVoice service running, refreshing profiles...');
+        log.debug('OpenVoice service running, refreshing profiles...');
         await openVoice.refreshProfiles();
       }
     };
@@ -411,13 +415,13 @@ function App() {
   useEffect(() => {
     // Listen for OpenVoice training updates via the hook's profiles
     const syncTrainingStatus = () => {
-      console.log('[syncTrainingStatus] Running sync...', {
+      log.debug('syncTrainingStatus - Running sync...', {
         voiceProfilesCount: settings.voice_profiles?.length || 0,
         ovProfilesCount: openVoice.profiles.length
       });
 
       if (!settings.voice_profiles || openVoice.profiles.length === 0) {
-        console.log('[syncTrainingStatus] Early return - no profiles to sync');
+        log.debug('syncTrainingStatus - Early return - no profiles to sync');
         return;
       }
 
@@ -427,7 +431,7 @@ function App() {
 
         // Find matching OpenVoice profile
         const ovProfile = openVoice.profiles.find(p => p.id === profile.openvoiceProfileId);
-        console.log('[syncTrainingStatus] Matching profile:', {
+        log.debug('syncTrainingStatus - Matching profile:', {
           localId: profile.openvoiceProfileId,
           ovProfile: ovProfile ? { id: ovProfile.id, state: ovProfile.state } : 'not found'
         });
@@ -458,7 +462,7 @@ function App() {
           newProgress !== profile.trainingProgress ||
           newError !== profile.trainingError
         ) {
-          console.log('[syncTrainingStatus] Status changed:', {
+          log.debug('syncTrainingStatus - Status changed:', {
             profileId: profile.id,
             oldStatus: profile.trainingStatus,
             newStatus,
@@ -476,7 +480,7 @@ function App() {
       });
 
       if (hasChanges) {
-        console.log('[syncTrainingStatus] Updating settings with new profiles');
+        log.debug('syncTrainingStatus - Updating settings with new profiles');
         setSettings(prev => ({
           ...prev,
           voice_profiles: updatedProfiles,
@@ -513,8 +517,8 @@ function App() {
 
       // Load settings
       const loadedSettings = await window.electronAPI.invoke('settings:getAll') as AppSettings;
-      console.log('[App] Loaded settings - voice_profiles:', loadedSettings.voice_profiles);
-      console.log('[App] Loaded settings - selected_voice_profile:', loadedSettings.selected_voice_profile);
+      log.debug('Loaded settings - voice_profiles:', loadedSettings.voice_profiles);
+      log.debug('Loaded settings - selected_voice_profile:', loadedSettings.selected_voice_profile);
       setSettings(loadedSettings);
 
       // Apply theme immediately after loading
@@ -570,19 +574,86 @@ function App() {
     );
 
     // Debug logging
-    console.log('[testVoice] Selected profile ID:', settings.selected_voice_profile);
-    console.log('[testVoice] Found profile:', selectedProfile);
-    console.log('[testVoice] Profile type:', selectedProfile?.type);
-    console.log('[testVoice] OpenVoice profile ID:', selectedProfile?.openvoiceProfileId);
-    console.log('[testVoice] Training status:', selectedProfile?.trainingStatus);
-    console.log('[testVoice] OpenVoice service running:', openVoice.status.running);
+    log.debug('testVoice - Selected profile ID:', settings.selected_voice_profile);
+    log.debug('testVoice - Found profile:', selectedProfile);
+    log.debug('testVoice - Profile type:', selectedProfile?.type);
+    log.debug('testVoice - OpenVoice profile ID:', selectedProfile?.openvoiceProfileId);
+    log.debug('testVoice - Training status:', selectedProfile?.trainingStatus);
+    log.debug('testVoice - OpenVoice service running:', openVoice.status.running);
 
-    // Check if it's a custom voice with OpenVoice
-    if (selectedProfile?.type === 'custom' && selectedProfile.openvoiceProfileId && selectedProfile.trainingStatus === 'ready') {
-      // Use OpenVoice synthesis for custom voices
+    // Check if it's a custom voice with OpenVoice - handle ALL custom voice cases
+    if (selectedProfile?.type === 'custom' && selectedProfile.openvoiceProfileId) {
+      // Use OpenVoice synthesis for custom voices - ALWAYS use custom voice, never fall back
       setTestingVoice(true);
       try {
-        // synthesize() expects a SynthesizeRequest object and returns the audio path directly
+        // Step 1: Auto-start OpenVoice if not running
+        if (!openVoice.status.running) {
+          log.debug('testVoice - OpenVoice not running, auto-starting...');
+          const started = await openVoice.startService();
+          if (!started) {
+            console.error('Failed to auto-start OpenVoice service');
+            setTestingVoice(false);
+            // Do NOT fall back - custom voice was explicitly selected
+            return;
+          }
+          log.debug('testVoice - OpenVoice started successfully');
+          // Wait a moment for service to stabilize
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        // Step 2: Initialize models if not already done
+        if (!openVoice.status.initialized) {
+          log.debug('testVoice - OpenVoice models not initialized, initializing...');
+          const initialized = await openVoice.initializeModels();
+          if (!initialized) {
+            console.error('Failed to initialize OpenVoice models');
+            setTestingVoice(false);
+            // Do NOT fall back - custom voice was explicitly selected
+            return;
+          }
+          log.debug('testVoice - OpenVoice models initialized successfully');
+        }
+
+        // Step 3: Check if profile needs training and auto-train if needed
+        // Refresh profiles to get current status from backend
+        await openVoice.refreshProfiles();
+        const currentOvProfile = openVoice.profiles.find(p => p.id === selectedProfile.openvoiceProfileId);
+        log.debug('testVoice - Current OpenVoice profile state:', currentOvProfile?.state);
+
+        if (!currentOvProfile || currentOvProfile.state !== 'ready') {
+          log.debug('testVoice - Profile not ready, triggering training...');
+          // Trigger training
+          await openVoice.trainProfile(selectedProfile.openvoiceProfileId);
+
+          // Wait for training to complete (poll for status)
+          let attempts = 0;
+          const maxAttempts = 60; // Wait up to 60 seconds
+          while (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await openVoice.refreshProfiles();
+            const updatedProfile = openVoice.profiles.find(p => p.id === selectedProfile.openvoiceProfileId);
+            log.debug(`testVoice - Training attempt ${attempts + 1}, state: ${updatedProfile?.state}`);
+
+            if (updatedProfile?.state === 'ready') {
+              log.debug('testVoice - Profile training complete!');
+              break;
+            } else if (updatedProfile?.state === 'failed') {
+              console.error('testVoice - Profile training failed:', updatedProfile?.error);
+              setTestingVoice(false);
+              return;
+            }
+            attempts++;
+          }
+
+          if (attempts >= maxAttempts) {
+            console.error('testVoice - Training timed out');
+            setTestingVoice(false);
+            return;
+          }
+        }
+
+        // Step 4: Synthesize speech
+        log.debug('testVoice - Starting synthesis...');
         const audioPath = await openVoice.synthesize({
           text: testText,
           profile_id: selectedProfile.openvoiceProfileId,
@@ -590,7 +661,7 @@ function App() {
           speed: settings.voice_speed ?? 1.0
         });
 
-        console.log('[testVoice] OpenVoice synthesis result - audioPath:', audioPath);
+        log.debug('testVoice - OpenVoice synthesis result - audioPath:', audioPath);
 
         if (audioPath) {
           // Play the generated audio
@@ -605,13 +676,12 @@ function App() {
         } else {
           console.error('OpenVoice synthesis failed:', openVoice.error);
           setTestingVoice(false);
-          // Fall back to system voice
-          fallbackToSystemVoice(testText, selectedProfile);
+          // Do NOT fall back to system voice - custom voice was explicitly selected
         }
       } catch (error) {
         console.error('OpenVoice synthesis error:', error);
         setTestingVoice(false);
-        fallbackToSystemVoice(testText, selectedProfile);
+        // Do NOT fall back to system voice - custom voice was explicitly selected
       }
       return;
     }
@@ -729,18 +799,18 @@ function App() {
     }
 
     // Copy uploaded audio file if provided
-    console.log('[DEBUG] createVoiceProfile - isCustom:', isCustom, 'audioPath:', audioPath);
+    log.debug('createVoiceProfile - isCustom:', isCustom, 'audioPath:', audioPath);
     if (isCustom && audioPath) {
       try {
         const sampleId = `uploaded-${Date.now()}`;
-        console.log('[DEBUG] Copying audio file with sampleId:', sampleId, 'profileId:', profileId, 'sourcePath:', audioPath);
+        log.debug('Copying audio file with sampleId:', sampleId, 'profileId:', profileId, 'sourcePath:', audioPath);
         const result = await window.electronAPI.invoke('voice:copyAudioFile', {
           profileId,
           sourcePath: audioPath,
           sampleId
         }) as { success: boolean; path?: string; error?: string };
 
-        console.log('[DEBUG] voice:copyAudioFile result:', result);
+        log.debug('voice:copyAudioFile result:', result);
         if (result.success && result.path) {
           trainingSamples.push({
             id: sampleId,
@@ -750,88 +820,88 @@ function App() {
             createdAt: new Date().toISOString()
           });
           savedAudioPaths.push(result.path);
-          console.log('[DEBUG] Audio file copied successfully. savedAudioPaths:', savedAudioPaths);
+          log.debug('Audio file copied successfully. savedAudioPaths:', savedAudioPaths);
         } else {
-          console.error('[DEBUG] voice:copyAudioFile failed:', result.error);
+          log.error('voice:copyAudioFile failed:', result.error);
         }
       } catch (error) {
-        console.error('Failed to copy uploaded file:', error);
+        log.error('Failed to copy uploaded file:', error);
       }
     } else {
-      console.log('[DEBUG] Skipping audio copy - isCustom:', isCustom, 'audioPath:', audioPath);
+      log.debug('Skipping audio copy - isCustom:', isCustom, 'audioPath:', audioPath);
     }
 
     let openvoiceProfileId: string | undefined;
     let trainingStatus: VoiceProfile['trainingStatus'] = isCustom ? 'pending' : undefined;
     let trainingError: string | undefined;
 
-    console.log('[DEBUG] Before OpenVoice integration - isCustom:', isCustom, 'savedAudioPaths.length:', savedAudioPaths.length);
+    log.debug('Before OpenVoice integration - isCustom:', isCustom, 'savedAudioPaths.length:', savedAudioPaths.length);
     // For custom voices, integrate with OpenVoice
     if (isCustom && savedAudioPaths.length > 0) {
-      console.log('[DEBUG] Entering OpenVoice integration block');
+      log.debug('Entering OpenVoice integration block');
       try {
         // Track if service is ready (don't rely on stale closure state)
         let serviceReady = openVoice.status.running;
-        console.log('[DEBUG] Initial serviceReady:', serviceReady, 'openVoice.status:', openVoice.status);
+        log.debug('Initial serviceReady:', serviceReady, 'openVoice.status:', openVoice.status);
 
         // Start OpenVoice service if not running
         if (!serviceReady) {
-          console.log('[DEBUG] Starting OpenVoice service...');
+          log.debug('Starting OpenVoice service...');
           const startResult = await openVoice.startService();
-          console.log('[DEBUG] startService result:', startResult);
+          log.debug('startService result:', startResult);
           if (startResult) {
             serviceReady = true;
           } else {
-            console.warn('Failed to start OpenVoice service, profile will be created without OpenVoice integration');
+            log.warn('Failed to start OpenVoice service, profile will be created without OpenVoice integration');
           }
         }
 
         // Create OpenVoice profile if service is running
         if (serviceReady) {
           // Ensure models are initialized before creating profile
-          console.log('[DEBUG] Service ready, checking models initialized:', openVoice.status.initialized);
+          log.debug('Service ready, checking models initialized:', openVoice.status.initialized);
           if (!openVoice.status.initialized) {
-            console.log('[DEBUG] Initializing OpenVoice models...');
+            log.debug('Initializing OpenVoice models...');
             const initResult = await openVoice.initializeModels();
-            console.log('[DEBUG] initializeModels result:', initResult);
+            log.debug('initializeModels result:', initResult);
             if (!initResult) {
-              console.warn('Failed to initialize models, training may not work');
+              log.warn('Failed to initialize models, training may not work');
             }
           }
 
-          console.log('[DEBUG] Creating OpenVoice profile with name:', name, 'audio samples:', savedAudioPaths);
+          log.debug('Creating OpenVoice profile with name:', name, 'audio samples:', savedAudioPaths);
           const ovProfile = await openVoice.createProfile(name, savedAudioPaths);
-          console.log('[DEBUG] createProfile result:', ovProfile);
+          log.debug('createProfile result:', ovProfile);
 
           if (ovProfile) {
             openvoiceProfileId = ovProfile.id;
             trainingStatus = 'pending';
-            console.log('[DEBUG] OpenVoice profile created:', ovProfile.id);
+            log.debug('OpenVoice profile created:', ovProfile.id);
 
             // Start training automatically
-            console.log('[DEBUG] Starting voice training for profile:', ovProfile.id);
+            log.debug('Starting voice training for profile:', ovProfile.id);
             const trainResult = await openVoice.trainProfile(ovProfile.id);
-            console.log('[DEBUG] trainProfile result:', trainResult);
+            log.debug('trainProfile result:', trainResult);
             if (trainResult) {
               trainingStatus = 'training';
-              console.log('[DEBUG] Training started successfully');
+              log.debug('Training started successfully');
             } else {
               trainingError = openVoice.error || 'Training failed to start';
-              console.error('[DEBUG] Training failed to start:', trainingError);
+              log.error('Training failed to start:', trainingError);
             }
           } else {
             trainingError = openVoice.error || 'Failed to create OpenVoice profile';
-            console.error('[DEBUG] Failed to create OpenVoice profile:', trainingError);
+            log.error('Failed to create OpenVoice profile:', trainingError);
           }
         } else {
-          console.log('[DEBUG] Service not ready, skipping OpenVoice integration');
+          log.debug('Service not ready, skipping OpenVoice integration');
         }
       } catch (error) {
-        console.error('[DEBUG] OpenVoice integration error:', error);
+        log.error('OpenVoice integration error:', error);
         trainingError = (error as Error).message;
       }
     } else {
-      console.log('[DEBUG] Skipping OpenVoice integration - isCustom:', isCustom, 'savedAudioPaths.length:', savedAudioPaths.length);
+      log.debug('Skipping OpenVoice integration - isCustom:', isCustom, 'savedAudioPaths.length:', savedAudioPaths.length);
     }
 
     const newProfile: VoiceProfile = {
@@ -911,7 +981,7 @@ function App() {
 
   // Select audio file for voice training (placeholder for OpenVoice integration)
   const selectAudioForTraining = useCallback(async () => {
-    console.log('[DEBUG] selectAudioForTraining called');
+    log.debug('selectAudioForTraining called');
     try {
       const result = await window.electronAPI.invoke('dialog:openFile', {
         filters: [
@@ -920,15 +990,15 @@ function App() {
         properties: ['openFile']
       }) as { canceled: boolean; filePaths: string[] };
 
-      console.log('[DEBUG] dialog:openFile result:', result);
+      log.debug('dialog:openFile result:', result);
       if (!result.canceled && result.filePaths.length > 0) {
-        console.log('[DEBUG] Setting selectedAudioFile to:', result.filePaths[0]);
+        log.debug('Setting selectedAudioFile to:', result.filePaths[0]);
         setSelectedAudioFile(result.filePaths[0]);
       } else {
-        console.log('[DEBUG] File dialog was canceled or no file selected');
+        log.debug('File dialog was canceled or no file selected');
       }
     } catch (error) {
-      console.error('[DEBUG] selectAudioForTraining error:', error);
+      log.error('selectAudioForTraining error:', error);
       showError(error, 'Failed to select audio file');
     }
   }, [showError]);
@@ -1427,17 +1497,17 @@ function App() {
             <KBEditor
               onSave={async (data) => {
                 try {
-                  console.log('[App.tsx] KBEditor onSave called');
-                  console.log('[App.tsx] KBData:', JSON.stringify(data, null, 2));
-                  console.log('[App.tsx] Module count:', data.modules?.length || 0);
+                  log.debug('KBEditor onSave called');
+                  log.debug('KBData:', JSON.stringify(data, null, 2));
+                  log.debug('Module count:', data.modules?.length || 0);
 
                   // Generate UUID for new KB
                   const uuid = crypto.randomUUID();
 
                   // Convert KBData to XML format
                   const xmlContent = convertKBDataToXML(data, uuid);
-                  console.log('[App.tsx] Generated XML length:', xmlContent.length);
-                  console.log('[App.tsx] Generated XML (first 2000 chars):', xmlContent.substring(0, 2000));
+                  log.debug('Generated XML length:', xmlContent.length);
+                  log.debug('Generated XML (first 2000 chars):', xmlContent.substring(0, 2000));
 
                   // Calculate module/chapter/section counts
                   const totalModules = data.modules.length;
@@ -2475,20 +2545,20 @@ function App() {
                         (voiceModalTab === 'custom' && !selectedAudioFile && recordedSamples.length === 0)
                       }
                       onClick={async () => {
-                        console.log('[DEBUG] Modal Create button clicked - voiceModalTab:', voiceModalTab);
-                        console.log('[DEBUG] Modal state - selectedAudioFile:', selectedAudioFile, 'recordedSamples.length:', recordedSamples.length);
+                        log.debug('Modal Create button clicked - voiceModalTab:', voiceModalTab);
+                        log.debug('Modal state - selectedAudioFile:', selectedAudioFile, 'recordedSamples.length:', recordedSamples.length);
 
                         if (voiceModalTab === 'system') {
                           await createVoiceProfile(newProfileName, selectedModalVoice, false);
                         } else {
                           // Validate we have audio before creating custom profile
                           if (!selectedAudioFile && recordedSamples.length === 0) {
-                            console.error('[DEBUG] Cannot create custom profile without audio!');
+                            log.error('Cannot create custom profile without audio!');
                             return;
                           }
 
                           // For custom voices, save recorded samples and/or uploaded file
-                          console.log('[DEBUG] Creating custom profile with audioPath:', selectedAudioFile);
+                          log.debug('Creating custom profile with audioPath:', selectedAudioFile);
                           await createVoiceProfile(
                             newProfileName,
                             '',
@@ -2511,9 +2581,22 @@ function App() {
             )}
 
             {/* Voice Profile Editor Modal */}
-            {editingVoiceProfile && (
+            {editingVoiceProfile && (() => {
+              // Debug logging
+              const matchedProfile = editingVoiceProfile.openvoiceProfileId
+                ? openVoice.profiles.find(p => p.id === editingVoiceProfile.openvoiceProfileId) || null
+                : null;
+              console.log('[App.tsx VoiceProfileEditor] Debug:', {
+                editingProfileId: editingVoiceProfile.id,
+                editingProfileName: editingVoiceProfile.name,
+                openvoiceProfileId: editingVoiceProfile.openvoiceProfileId,
+                availableOpenVoiceProfiles: openVoice.profiles.map(p => ({ id: p.id, name: p.name })),
+                matchedProfile: matchedProfile ? { id: matchedProfile.id, name: matchedProfile.name } : null
+              });
+              return (
               <VoiceProfileEditor
                 profile={editingVoiceProfile}
+                openvoiceProfile={matchedProfile}
                 onClose={() => setEditingVoiceProfile(null)}
                 onSave={async (updatedProfile, needsRetraining) => {
                   // Update the profile in settings
@@ -2547,8 +2630,10 @@ function App() {
                 }}
                 systemVoices={systemVoices}
                 isLoading={openVoice.isLoading}
+                trainingRetry={openVoice.trainingRetry}
               />
-            )}
+              );
+            })()}
           </div>
         )}
       </main>

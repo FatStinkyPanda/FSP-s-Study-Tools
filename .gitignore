@@ -52,6 +52,7 @@ venv/
 env/
 ENV/
 .venv/
+python_env/
 
 # Environment variables
 .env
@@ -200,6 +201,22 @@ check-if-done-or-not.txt
 test-devtools.js
 test-study-session.js
 NUL
+debug_*.py
+test_*.wav
+
+# Voice/Audio Data (user-generated content)
+data/voice/
+voice_recordings/
+voice_scripts/
+processed/
+
+# OpenVoice checkpoints and models (too large for git)
+openvoice_checkpoints/
+openvoice_src/
+melo_src/
+
+# Serena LSP
+.serena/
 
 # Claude Code artifacts
 .claude/

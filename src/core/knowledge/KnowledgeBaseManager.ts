@@ -4,6 +4,9 @@ import { ContentChunker } from './ContentChunker';
 import { SemanticIndexer, SemanticSearchResult } from '../indexer';
 import { KnowledgeBase } from '../../shared/types';
 import { ParserManager, ParsedDocument } from '../parser';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('KnowledgeBaseManager');
 
 export interface IndexedContent {
   chunkId: string;
@@ -46,7 +49,7 @@ export class KnowledgeBaseManager {
 
       // Log warnings if any
       if (validation.warnings.length > 0) {
-        console.warn('XML validation warnings:', validation.warnings);
+        log.warn('XML validation warnings:', validation.warnings);
       }
 
       // Create knowledge base entry
@@ -82,7 +85,7 @@ export class KnowledgeBaseManager {
    */
   async importFromDocument(filePath: string): Promise<number> {
     try {
-      console.log(`Importing document: ${filePath}`);
+      log.info(`Importing document: ${filePath}`);
 
       // Check if file type is supported
       if (!this.parserManager.isSupported(filePath)) {
@@ -94,7 +97,7 @@ export class KnowledgeBaseManager {
       }
 
       // Parse document
-      console.log('Parsing document...');
+      log.debug('Parsing document...');
       const parsed = await this.parserManager.parseFile(filePath);
 
       // Validate parsed document has content
@@ -104,15 +107,15 @@ export class KnowledgeBaseManager {
         );
       }
 
-      console.log(`Extracted ${parsed.text.length} characters from document`);
+      log.debug(`Extracted ${parsed.text.length} characters from document`);
 
       // Log warnings if any
       if (parsed.warnings && parsed.warnings.length > 0) {
-        console.warn('Document parsing warnings:', parsed.warnings);
+        log.warn('Document parsing warnings:', parsed.warnings);
       }
 
       // Convert to XML format
-      console.log('Converting to knowledge base format...');
+      log.debug('Converting to knowledge base format...');
       const xmlContent = this.convertDocumentToXML(parsed);
 
       // Validate XML was generated
@@ -120,10 +123,10 @@ export class KnowledgeBaseManager {
         throw new Error('Failed to generate XML from document');
       }
 
-      console.log(`Generated XML (${xmlContent.length} characters)`);
+      log.debug(`Generated XML (${xmlContent.length} characters)`);
 
       // Import as XML
-      console.log('Importing as XML...');
+      log.debug('Importing as XML...');
       return await this.importFromXML(xmlContent, filePath);
     } catch (error) {
       throw new Error(`Failed to import document: ${(error as Error).message}`);
@@ -143,6 +146,19 @@ export class KnowledgeBaseManager {
       const title = doc.metadata.title || 'Imported Document';
       const author = doc.metadata.author || 'Unknown';
 
+      // Extract images from elements
+      const images = (doc.elements || [])
+        .filter(el => el.type === 'image' && el.src)
+        .map((el, idx) => ({
+          src: el.src!,
+          alt: el.alt || `Image ${idx + 1}`,
+          order: idx,
+        }));
+
+      if (images.length > 0) {
+        log.debug(`Converting document with ${images.length} images`);
+      }
+
       // Split document into sections based on paragraphs
       const paragraphs = doc.text
         .split(/\n\n+/)
@@ -154,63 +170,85 @@ export class KnowledgeBaseManager {
         throw new Error('Document contains no readable paragraphs');
       }
 
-    // Group paragraphs into sections (roughly 500 words each)
-    const sections: string[][] = [];
-    let currentSection: string[] = [];
-    let wordCount = 0;
+      // Group paragraphs into sections (roughly 500 words each)
+      const sections: { paragraphs: string[]; images: typeof images }[] = [];
+      let currentSection: string[] = [];
+      let wordCount = 0;
 
-    for (const para of paragraphs) {
-      const paraWords = para.split(/\s+/).length;
+      for (const para of paragraphs) {
+        const paraWords = para.split(/\s+/).length;
 
-      if (wordCount + paraWords > 500 && currentSection.length > 0) {
-        sections.push(currentSection);
-        currentSection = [para];
-        wordCount = paraWords;
-      } else {
-        currentSection.push(para);
-        wordCount += paraWords;
+        if (wordCount + paraWords > 500 && currentSection.length > 0) {
+          sections.push({ paragraphs: currentSection, images: [] });
+          currentSection = [para];
+          wordCount = paraWords;
+        } else {
+          currentSection.push(para);
+          wordCount += paraWords;
+        }
       }
-    }
 
-    if (currentSection.length > 0) {
-      sections.push(currentSection);
-    }
+      if (currentSection.length > 0) {
+        sections.push({ paragraphs: currentSection, images: [] });
+      }
 
-    // Build XML
-    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-    xml += `<knowledge_base>\n`;
-    xml += `  <metadata>\n`;
-    xml += `    <uuid>${this.escapeXML(uuid)}</uuid>\n`;
-    xml += `    <title>${this.escapeXML(title)}</title>\n`;
-    xml += `    <version>1.0</version>\n`;
-    xml += `    <author>${this.escapeXML(author)}</author>\n`;
-    xml += `    <description>Imported from ${this.escapeXML(doc.filePath)}</description>\n`;
-    xml += `    <category>imported</category>\n`;
-    xml += `  </metadata>\n\n`;
+      // Distribute images across sections (roughly evenly)
+      if (images.length > 0 && sections.length > 0) {
+        const imagesPerSection = Math.ceil(images.length / sections.length);
+        for (let i = 0; i < images.length; i++) {
+          const sectionIdx = Math.min(Math.floor(i / imagesPerSection), sections.length - 1);
+          sections[sectionIdx].images.push(images[i]);
+        }
+      }
 
-    xml += `  <modules>\n`;
-    xml += `    <module id="main">\n`;
-    xml += `      <title>${this.escapeXML(title)}</title>\n`;
-    xml += `      <description>Content from imported document</description>\n`;
-    xml += `      <chapters>\n`;
-    xml += `        <chapter id="content">\n`;
-    xml += `          <title>Document Content</title>\n`;
-    xml += `          <sections>\n`;
+      // Build XML
+      let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+      xml += `<knowledge_base>\n`;
+      xml += `  <metadata>\n`;
+      xml += `    <uuid>${this.escapeXML(uuid)}</uuid>\n`;
+      xml += `    <title>${this.escapeXML(title)}</title>\n`;
+      xml += `    <version>1.0</version>\n`;
+      xml += `    <author>${this.escapeXML(author)}</author>\n`;
+      xml += `    <description>Imported from ${this.escapeXML(doc.filePath)}</description>\n`;
+      xml += `    <category>imported</category>\n`;
+      xml += `  </metadata>\n\n`;
 
-    // Add sections
-    sections.forEach((sectionParas, idx) => {
-      const sectionId = `section-${idx + 1}`;
-      const sectionTitle = sectionParas[0].substring(0, 50) + (sectionParas[0].length > 50 ? '...' : '');
+      xml += `  <modules>\n`;
+      xml += `    <module id="main">\n`;
+      xml += `      <title>${this.escapeXML(title)}</title>\n`;
+      xml += `      <description>Content from imported document</description>\n`;
+      xml += `      <chapters>\n`;
+      xml += `        <chapter id="content">\n`;
+      xml += `          <title>Document Content</title>\n`;
+      xml += `          <sections>\n`;
 
-      xml += `            <section id="${sectionId}">\n`;
-      xml += `              <title>${this.escapeXML(sectionTitle)}</title>\n`;
-      xml += `              <content>\n`;
-      xml += `                <text>\n`;
-      xml += this.escapeXML(sectionParas.join('\n\n'));
-      xml += `\n                </text>\n`;
-      xml += `              </content>\n`;
-      xml += `            </section>\n`;
-    });
+      // Add sections with images
+      sections.forEach((section, idx) => {
+        const sectionId = `section-${idx + 1}`;
+        const sectionTitle = section.paragraphs[0].substring(0, 50) + (section.paragraphs[0].length > 50 ? '...' : '');
+
+        xml += `            <section id="${sectionId}">\n`;
+        xml += `              <title>${this.escapeXML(sectionTitle)}</title>\n`;
+        xml += `              <content>\n`;
+        xml += `                <text>\n`;
+        xml += this.escapeXML(section.paragraphs.join('\n\n'));
+        xml += `\n                </text>\n`;
+
+        // Add images for this section
+        if (section.images.length > 0) {
+          xml += `                <elements>\n`;
+          section.images.forEach((img, imgIdx) => {
+            xml += `                  <image order="${imgIdx}">\n`;
+            xml += `                    <src>${this.escapeXML(img.src)}</src>\n`;
+            xml += `                    <alt>${this.escapeXML(img.alt)}</alt>\n`;
+            xml += `                  </image>\n`;
+          });
+          xml += `                </elements>\n`;
+        }
+
+        xml += `              </content>\n`;
+        xml += `            </section>\n`;
+      });
 
       xml += `          </sections>\n`;
       xml += `        </chapter>\n`;
@@ -221,7 +259,7 @@ export class KnowledgeBaseManager {
 
       return xml;
     } catch (error) {
-      console.error('XML conversion error:', error);
+      log.error('XML conversion error:', error);
       throw new Error(`Failed to convert document to XML: ${(error as Error).message}`);
     }
   }

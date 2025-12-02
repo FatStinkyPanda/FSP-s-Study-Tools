@@ -111,6 +111,16 @@
   cursor: default;
 }
 
+/* Make words clickable during playback for click-to-seek */
+.synced-text-content.synced-text-speaking .synced-word {
+  cursor: pointer;
+}
+
+.synced-text-content.synced-text-speaking .synced-word:hover {
+  background-color: rgba(251, 191, 36, 0.3);
+  box-shadow: 0 0 5px rgba(251, 191, 36, 0.5);
+}
+
 /* Active Word - Hotspot */
 .synced-word-active {
   font-weight: 600;

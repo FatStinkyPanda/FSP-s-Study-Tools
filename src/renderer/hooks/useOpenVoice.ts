@@ -6,6 +6,9 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('useOpenVoice');
 
 // Types matching the Python backend and preload
 export interface OpenVoiceStatus {
@@ -64,11 +67,20 @@ export interface DownloadProgress {
   error?: string;
 }
 
+export interface TrainingRetryInfo {
+  profileId: string;
+  attempt: number;
+  maxAttempts: number;
+  lastError: string;
+  message: string;
+}
+
 export interface UseOpenVoiceResult {
   // Status
   status: OpenVoiceStatus;
   isLoading: boolean;
   error: string | null;
+  trainingRetry: TrainingRetryInfo | null;
 
   // Service management
   startService: () => Promise<boolean>;
@@ -107,6 +119,7 @@ export function useOpenVoice(): UseOpenVoiceResult {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
+  const [trainingRetry, setTrainingRetry] = useState<TrainingRetryInfo | null>(null);
 
   // Subscribe to status updates
   useEffect(() => {
@@ -116,7 +129,7 @@ export function useOpenVoice(): UseOpenVoiceResult {
 
     // Also subscribe to training updates
     const trainingCleanup = window.electronAPI.onOpenVoiceTrainingUpdate((profile) => {
-      console.log('[useOpenVoice] Training update received:', profile.id, profile.state);
+      log.debug('Training update received:', profile.id, profile.state);
       setProfiles(prev => {
         const existing = prev.find(p => p.id === profile.id);
         if (existing) {
@@ -131,7 +144,7 @@ export function useOpenVoice(): UseOpenVoiceResult {
 
     // Subscribe to download progress updates
     const downloadCleanup = window.electronAPI.onOpenVoiceDownloadProgress((progress) => {
-      console.log('[useOpenVoice] Download progress:', progress.progress, progress.status);
+      log.debug('Download progress:', progress.progress, progress.status);
       setDownloadProgress(progress);
       // Clear progress when download completes
       if (!progress.downloading && progress.progress === 100) {
@@ -139,10 +152,19 @@ export function useOpenVoice(): UseOpenVoiceResult {
       }
     });
 
+    // Subscribe to training retry events
+    const retryCleanup = window.electronAPI.onOpenVoiceTrainingRetry((info) => {
+      log.debug('Training retry:', info.message);
+      setTrainingRetry(info);
+      // Clear retry info after a short delay to allow UI update
+      setTimeout(() => setTrainingRetry(null), 5000);
+    });
+
     return () => {
       cleanup();
       trainingCleanup();
       downloadCleanup();
+      retryCleanup();
     };
   }, []);
 
@@ -155,6 +177,18 @@ export function useOpenVoice(): UseOpenVoiceResult {
     try {
       const result = await window.electronAPI.invoke('openvoice:status') as OpenVoiceStatus;
       setStatus(result);
+
+      // Auto-refresh profiles when service is running
+      if (result.running) {
+        const profilesResult = await window.electronAPI.invoke('openvoice:listProfiles') as {
+          success: boolean;
+          profiles?: OpenVoiceProfile[];
+          error?: string
+        };
+        if (profilesResult.success && profilesResult.profiles) {
+          setProfiles(profilesResult.profiles);
+        }
+      }
     } catch (err) {
       console.error('Failed to get OpenVoice status:', err);
     }
@@ -413,6 +447,7 @@ export function useOpenVoice(): UseOpenVoiceResult {
     status,
     isLoading,
     error,
+    trainingRetry,
     startService,
     stopService,
     initializeModels,

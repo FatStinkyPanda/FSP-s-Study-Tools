@@ -10,10 +10,38 @@ import { app, ipcMain, BrowserWindow } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as http from 'http';
+import { createLogger } from '../shared/logger';
 
-const SERVICE_PORT = 5123;
-const SERVICE_HOST = '127.0.0.1';
+const log = createLogger('OpenVoice');
+
+// OpenVoice service configuration - configurable via environment variables
+const SERVICE_PORT = parseInt(process.env.OPENVOICE_PORT || '5123', 10);
+const SERVICE_HOST = process.env.OPENVOICE_HOST || '127.0.0.1';
 const SERVICE_URL = `http://${SERVICE_HOST}:${SERVICE_PORT}`;
+
+// Training retry configuration - configurable via environment variables
+const TRAINING_MAX_RETRIES = parseInt(process.env.OPENVOICE_MAX_RETRIES || '3', 10);
+const TRAINING_RETRY_BASE_DELAY_MS = parseInt(process.env.OPENVOICE_RETRY_DELAY_MS || '2000', 10);
+
+// Error types for classification
+const TRANSIENT_ERROR_PATTERNS = [
+  'timeout',
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'temporarily unavailable',
+  'service unavailable',
+  'try again',
+  'busy',
+];
+
+const PERMANENT_ERROR_PATTERNS = [
+  'invalid audio',
+  'unsupported format',
+  'file not found',
+  'permission denied',
+  'invalid profile',
+  'not enough speech',
+];
 
 interface OpenVoiceProfile {
   id: string;
@@ -41,14 +69,71 @@ interface ServiceStatus {
   checkpointsReady: boolean;
 }
 
+// Auto-shutdown configuration - stop service after period of inactivity
+const AUTO_SHUTDOWN_DELAY_MS = parseInt(process.env.OPENVOICE_AUTO_SHUTDOWN_MS || '300000', 10); // 5 minutes default
+
 class OpenVoiceServiceManager {
   private process: ChildProcess | null = null;
   private isStarting = false;
   private statusCheckInterval: NodeJS.Timeout | null = null;
   private mainWindow: BrowserWindow | null = null;
+  private autoShutdownTimer: NodeJS.Timeout | null = null;
+  private lastActivityTime: number = 0;
 
   constructor() {
     this.setupIPCHandlers();
+  }
+
+  /**
+   * Reset the auto-shutdown timer - called on every activity
+   */
+  private resetAutoShutdownTimer(): void {
+    this.lastActivityTime = Date.now();
+
+    if (this.autoShutdownTimer) {
+      clearTimeout(this.autoShutdownTimer);
+    }
+
+    // Only set timer if service is running
+    if (this.process) {
+      this.autoShutdownTimer = setTimeout(() => {
+        const idleTime = Date.now() - this.lastActivityTime;
+        if (idleTime >= AUTO_SHUTDOWN_DELAY_MS) {
+          log.info(`OpenVoice service idle for ${Math.round(idleTime / 1000)}s, auto-stopping to save resources`);
+          this.stopService();
+        }
+      }, AUTO_SHUTDOWN_DELAY_MS);
+    }
+  }
+
+  /**
+   * Ensure the service is running - auto-starts if needed
+   * This is the key method for seamless user experience
+   */
+  async ensureServiceRunning(): Promise<{ success: boolean; error?: string }> {
+    // If already running, just reset the shutdown timer
+    if (this.process) {
+      this.resetAutoShutdownTimer();
+      return { success: true };
+    }
+
+    // If starting, wait for it
+    if (this.isStarting) {
+      // Wait up to 30 seconds for startup to complete
+      const maxWait = 30000;
+      const startTime = Date.now();
+      while (this.isStarting && Date.now() - startTime < maxWait) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      if (this.process) {
+        return { success: true };
+      }
+      return { success: false, error: 'Service startup timed out' };
+    }
+
+    // Start the service
+    log.info('Auto-starting OpenVoice service on demand');
+    return this.startService();
   }
 
   setMainWindow(window: BrowserWindow) {
@@ -207,7 +292,7 @@ class OpenVoiceServiceManager {
         return { success: false, error: `Service script not found: ${serviceScript}` };
       }
 
-      console.log(`Starting OpenVoice service: ${pythonPath} ${serviceScript}`);
+      log.info(`Starting OpenVoice service: ${pythonPath} ${serviceScript}`);
 
       // Add bundled ffmpeg to PATH for audio processing
       const ffmpegBin = path.join(app.getAppPath(), 'ffmpeg_bin');
@@ -220,21 +305,21 @@ class OpenVoiceServiceManager {
       });
 
       this.process.stdout?.on('data', (data) => {
-        console.log(`[OpenVoice] ${data}`);
+        log.debug(`${data}`);
       });
 
       this.process.stderr?.on('data', (data) => {
-        console.error(`[OpenVoice Error] ${data}`);
+        log.warn(`${data}`);
       });
 
       this.process.on('close', (code) => {
-        console.log(`OpenVoice service exited with code ${code}`);
+        log.info(`OpenVoice service exited with code ${code}`);
         this.process = null;
         this.sendStatusUpdate();
       });
 
       this.process.on('error', (error) => {
-        console.error('OpenVoice service error:', error);
+        log.error('OpenVoice service error:', error);
         this.process = null;
       });
 
@@ -248,6 +333,9 @@ class OpenVoiceServiceManager {
       // Start status monitoring
       this.startStatusMonitoring();
 
+      // Start auto-shutdown timer
+      this.resetAutoShutdownTimer();
+
       this.sendStatusUpdate();
       return { success: true };
     } catch (error: any) {
@@ -258,6 +346,12 @@ class OpenVoiceServiceManager {
   }
 
   async stopService(): Promise<{ success: boolean }> {
+    // Clear auto-shutdown timer
+    if (this.autoShutdownTimer) {
+      clearTimeout(this.autoShutdownTimer);
+      this.autoShutdownTimer = null;
+    }
+
     if (this.statusCheckInterval) {
       clearInterval(this.statusCheckInterval);
       this.statusCheckInterval = null;
@@ -305,12 +399,26 @@ class OpenVoiceServiceManager {
   }
 
   async initializeModels(): Promise<{ success: boolean; error?: string }> {
+    // Auto-start service if not running
+    const serviceResult = await this.ensureServiceRunning();
+    if (!serviceResult.success) {
+      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+    }
+
+    this.resetAutoShutdownTimer();
     const result = await this.makeRequest('POST', '/initialize');
     this.sendStatusUpdate();
     return result;
   }
 
   async listProfiles(): Promise<{ success: boolean; profiles?: OpenVoiceProfile[]; error?: string }> {
+    // Auto-start service if not running
+    const serviceResult = await this.ensureServiceRunning();
+    if (!serviceResult.success) {
+      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}`, profiles: [] };
+    }
+
+    this.resetAutoShutdownTimer();
     const result = await this.makeRequest('GET', '/profiles');
     if (result.success) {
       return { success: true, profiles: result.data?.profiles || [] };
@@ -319,6 +427,13 @@ class OpenVoiceServiceManager {
   }
 
   async getProfile(profileId: string): Promise<{ success: boolean; profile?: OpenVoiceProfile; error?: string }> {
+    // Auto-start service if not running
+    const serviceResult = await this.ensureServiceRunning();
+    if (!serviceResult.success) {
+      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+    }
+
+    this.resetAutoShutdownTimer();
     const result = await this.makeRequest('GET', `/profiles/${profileId}`);
     if (result.success) {
       return { success: true, profile: result.data };
@@ -330,6 +445,13 @@ class OpenVoiceServiceManager {
     name: string,
     audioSamples: string[]
   ): Promise<{ success: boolean; profile?: OpenVoiceProfile; error?: string }> {
+    // Auto-start service if not running
+    const serviceResult = await this.ensureServiceRunning();
+    if (!serviceResult.success) {
+      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+    }
+
+    this.resetAutoShutdownTimer();
     const result = await this.makeRequest('POST', '/profiles', {
       name,
       audio_samples: audioSamples,
@@ -341,25 +463,108 @@ class OpenVoiceServiceManager {
   }
 
   async deleteProfile(profileId: string): Promise<{ success: boolean; error?: string }> {
+    // Auto-start service if not running
+    const serviceResult = await this.ensureServiceRunning();
+    if (!serviceResult.success) {
+      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+    }
+
+    this.resetAutoShutdownTimer();
     const result = await this.makeRequest('DELETE', `/profiles/${profileId}`);
     return result;
   }
 
-  async trainProfile(profileId: string): Promise<{ success: boolean; error?: string }> {
-    const result = await this.makeRequest('POST', `/profiles/${profileId}/train`);
-
-    // Start polling for training progress
-    if (result.success) {
-      this.pollTrainingProgress(profileId);
+  async trainProfile(profileId: string): Promise<{ success: boolean; error?: string; retryAttempt?: number }> {
+    // Auto-start service if not running (seamless user experience)
+    const serviceResult = await this.ensureServiceRunning();
+    if (!serviceResult.success) {
+      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
     }
 
-    return result;
+    // Reset auto-shutdown timer on activity
+    this.resetAutoShutdownTimer();
+
+    return this.trainProfileWithRetry(profileId, 0);
+  }
+
+  private async trainProfileWithRetry(
+    profileId: string,
+    attempt: number
+  ): Promise<{ success: boolean; error?: string; retryAttempt?: number }> {
+    // Keep activity going during training
+    this.resetAutoShutdownTimer();
+
+    const result = await this.makeRequest('POST', `/profiles/${profileId}/train`);
+
+    // Start polling for training progress if request was accepted
+    if (result.success) {
+      this.pollTrainingProgress(profileId);
+      return { success: true };
+    }
+
+    // Check if error is transient and we should retry
+    const errorMessage = result.error?.toLowerCase() || '';
+    const isTransientError = TRANSIENT_ERROR_PATTERNS.some(pattern =>
+      errorMessage.includes(pattern.toLowerCase())
+    );
+    const isPermanentError = PERMANENT_ERROR_PATTERNS.some(pattern =>
+      errorMessage.includes(pattern.toLowerCase())
+    );
+
+    // Don't retry permanent errors
+    if (isPermanentError) {
+      log.error(`Training failed with permanent error: ${result.error}`);
+      return { success: false, error: result.error };
+    }
+
+    // Retry transient errors up to max retries
+    if (isTransientError && attempt < TRAINING_MAX_RETRIES) {
+      const nextAttempt = attempt + 1;
+      const delay = TRAINING_RETRY_BASE_DELAY_MS * Math.pow(2, attempt); // Exponential backoff
+
+      log.info(`Training attempt ${nextAttempt} failed with transient error. Retrying in ${delay}ms...`);
+
+      // Notify frontend about retry
+      this.sendTrainingRetryUpdate(profileId, nextAttempt, TRAINING_MAX_RETRIES, result.error || 'Unknown error');
+
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return this.trainProfileWithRetry(profileId, nextAttempt);
+    }
+
+    // Max retries exceeded or unknown error type
+    if (attempt >= TRAINING_MAX_RETRIES) {
+      const finalError = `Training failed after ${TRAINING_MAX_RETRIES} attempts: ${result.error}`;
+      log.error(finalError);
+      return { success: false, error: finalError, retryAttempt: attempt };
+    }
+
+    // Unknown error type - don't retry
+    return { success: false, error: result.error };
+  }
+
+  private sendTrainingRetryUpdate(profileId: string, attempt: number, maxAttempts: number, lastError: string) {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('openvoice:trainingRetry', {
+        profileId,
+        attempt,
+        maxAttempts,
+        lastError,
+        message: `Retrying training (attempt ${attempt}/${maxAttempts})...`,
+      });
+    }
   }
 
   async updateProfileSamples(
     profileId: string,
     audioSamples: string[]
   ): Promise<{ success: boolean; profile?: OpenVoiceProfile; error?: string }> {
+    // Auto-start service if not running
+    const serviceResult = await this.ensureServiceRunning();
+    if (!serviceResult.success) {
+      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+    }
+
+    this.resetAutoShutdownTimer();
     const result = await this.makeRequest('PUT', `/profiles/${profileId}/samples`, {
       audio_samples: audioSamples,
     });
@@ -370,6 +575,15 @@ class OpenVoiceServiceManager {
   }
 
   async synthesize(request: SynthesizeRequest): Promise<{ success: boolean; audioPath?: string; error?: string }> {
+    // Auto-start service if not running (seamless user experience)
+    const serviceResult = await this.ensureServiceRunning();
+    if (!serviceResult.success) {
+      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+    }
+
+    // Reset auto-shutdown timer on activity
+    this.resetAutoShutdownTimer();
+
     // Use 3-minute timeout for synthesis (first synthesis may need to download/load BERT model which takes ~75s)
     const result = await this.makeRequest('POST', '/synthesize', {
       text: request.text,
@@ -390,6 +604,15 @@ class OpenVoiceServiceManager {
   }
 
   async synthesizeLong(request: SynthesizeRequest): Promise<{ success: boolean; audioPath?: string; error?: string }> {
+    // Auto-start service if not running (seamless user experience)
+    const serviceResult = await this.ensureServiceRunning();
+    if (!serviceResult.success) {
+      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+    }
+
+    // Reset auto-shutdown timer on activity
+    this.resetAutoShutdownTimer();
+
     // Use the /synthesize/long endpoint for chunked synthesis of long texts
     // Increased timeout (5 minutes) for longer texts that require chunked processing
     const result = await this.makeRequest('POST', '/synthesize/long', {
@@ -406,6 +629,13 @@ class OpenVoiceServiceManager {
   }
 
   async checkpointsStatus(): Promise<{ ready: boolean; checkpoints_dir?: string; error?: string }> {
+    // Auto-start service if not running
+    const serviceResult = await this.ensureServiceRunning();
+    if (!serviceResult.success) {
+      return { ready: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+    }
+
+    this.resetAutoShutdownTimer();
     const result = await this.makeRequest('GET', '/checkpoints/status');
     if (result.success) {
       return {
@@ -417,6 +647,19 @@ class OpenVoiceServiceManager {
   }
 
   async downloadCheckpoints(): Promise<{ success: boolean; message?: string; error?: string }> {
+    // Auto-start service if not running
+    const serviceResult = await this.ensureServiceRunning();
+    if (!serviceResult.success) {
+      // If service isn't running, return manual instructions
+      const checkpointsDir = path.join(app.getAppPath(), 'openvoice_checkpoints');
+      return {
+        success: false,
+        error: `OpenVoice service unavailable. Please download OpenVoice v2 checkpoints from https://myshell-public-repo-hosting.s3.amazonaws.com/openvoice/checkpoints_v2_0417.zip and extract to ${checkpointsDir}`,
+      };
+    }
+
+    this.resetAutoShutdownTimer();
+
     // Start automatic checkpoint download
     const result = await this.makeRequest('POST', '/checkpoints/download', {}, 10000);
 
@@ -426,7 +669,7 @@ class OpenVoiceServiceManager {
       return { success: true, message: 'Download started' };
     }
 
-    // If service isn't running, return manual instructions
+    // If download failed, return manual instructions
     const checkpointsDir = path.join(app.getAppPath(), 'openvoice_checkpoints');
     return {
       success: false,
@@ -502,6 +745,14 @@ class OpenVoiceServiceManager {
     recommendations?: string[];
     error?: string;
   }> {
+    // Auto-start service if not running
+    const serviceResult = await this.ensureServiceRunning();
+    if (!serviceResult.success) {
+      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+    }
+
+    this.resetAutoShutdownTimer();
+
     // Use longer timeout since VAD analysis can take time
     const result = await this.makeRequest('POST', '/validate-audio', {
       audio_paths: audioPaths,
@@ -532,7 +783,7 @@ class OpenVoiceServiceManager {
 
     for (const pythonPath of bundledPythonPaths) {
       if (fs.existsSync(pythonPath)) {
-        console.log(`Found bundled Python at: ${pythonPath}`);
+        log.debug(`Found bundled Python at: ${pythonPath}`);
         // Verify it works
         try {
           const result = await new Promise<boolean>((resolve) => {

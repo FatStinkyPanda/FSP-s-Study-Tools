@@ -13,6 +13,20 @@ import { RecommendationEngine } from '../core/recommendation';
 import { KB_TOOLS, AIAgentToolExecutor, createToolResultMessage } from '../core/ai/AIAgentTools';
 import { AIMessage, AIToolCall } from '../shared/ai-types';
 import { openVoiceService } from './openvoice-service';
+import { voskService } from './vosk-service';
+import { createLogger } from '../shared/logger';
+import {
+  validatePositiveInteger,
+  validateSQLQuery,
+  validateFilePath,
+  validateXMLContent,
+  validateHighlightParams,
+  validateTestGenerationParams,
+  validateArray,
+} from '../shared/ipc-validation';
+
+// Create logger for main process
+const log = createLogger('Main');
 
 // Development mode detection
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -75,9 +89,9 @@ class Application {
       // Set up IPC handlers
       this.setupIPCHandlers();
 
-      console.log('Application initialized successfully');
+      log.info('Application initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize application:', error);
+      log.error('Failed to initialize application:', error);
       app.quit();
     }
   }
@@ -96,14 +110,14 @@ class Application {
         throw new Error(`Invalid database path: ${dbPath}`);
       }
 
-      console.log(`Initializing database at: ${dbPath}`);
+      log.info(`Initializing database at: ${dbPath}`);
 
       this.databaseManager = new DatabaseManager(dbPath);
       await this.databaseManager.initialize();
 
-      console.log(`Database initialized successfully at: ${dbPath}`);
+      log.info(`Database initialized successfully at: ${dbPath}`);
     } catch (error) {
-      console.error('Database initialization error:', error);
+      log.error('Database initialization error:', error);
       throw error;
     }
   }
@@ -128,9 +142,9 @@ class Application {
 
     const configuredProviders = this.aiManager.getConfiguredProviders();
     if (configuredProviders.length > 0) {
-      console.log(`AI providers configured: ${configuredProviders.join(', ')}`);
+      log.info(`AI providers configured: ${configuredProviders.join(', ')}`);
     } else {
-      console.log('No AI providers configured - please add API keys in Settings');
+      log.info('No AI providers configured - please add API keys in Settings');
     }
 
     // Initialize Conversation Manager
@@ -156,7 +170,7 @@ class Application {
     // Initialize Update Manager
     this.updateManager = new UpdateManager();
 
-    console.log('AI system initialized');
+    log.info('AI system initialized');
   }
 
   private createMainWindow(): void {
@@ -180,7 +194,7 @@ class Application {
 
     // Load the index.html from dist/renderer/main_window/index.html
     const htmlPath = path.join(basePath, 'renderer', 'main_window', 'index.html');
-    if (isDev) console.log('Loading HTML from:', htmlPath);
+    if (isDev) log.debug('Loading HTML from:', htmlPath);
     this.mainWindow.loadFile(htmlPath);
 
     // Open DevTools in development
@@ -208,6 +222,18 @@ class Application {
 
     // Pass mainWindow to OpenVoice service for status updates
     openVoiceService.setMainWindow(this.mainWindow);
+
+    // Pass mainWindow to Vosk service for speech recognition results
+    voskService.setMainWindow(this.mainWindow);
+
+    // Auto-start Vosk service in background
+    voskService.start().then((success) => {
+      if (success) {
+        log.info('Vosk speech recognition service started');
+      } else {
+        log.warn('Vosk speech recognition service failed to start - will retry on demand');
+      }
+    });
   }
 
   private setupIPCHandlers(): void {
@@ -216,12 +242,22 @@ class Application {
       if (!this.databaseManager) {
         throw new Error('Database not initialized');
       }
+      // Validate SQL query
+      const sqlResult = validateSQLQuery(sql);
+      if (!sqlResult.valid) {
+        throw new Error(sqlResult.error);
+      }
       return this.databaseManager.query(sql, params);
     });
 
     ipcMain.handle('db:execute', async (_event, sql: string, params?: unknown[]) => {
       if (!this.databaseManager) {
         throw new Error('Database not initialized');
+      }
+      // Validate SQL query
+      const sqlResult = validateSQLQuery(sql);
+      if (!sqlResult.valid) {
+        throw new Error(sqlResult.error);
       }
       return this.databaseManager.execute(sql, params);
     });
@@ -237,6 +273,11 @@ class Application {
     ipcMain.handle('kb:get', async (_event, id: number) => {
       if (!this.databaseManager) {
         throw new Error('Database not initialized');
+      }
+      // Validate id
+      const idResult = validatePositiveInteger(id, 'id');
+      if (!idResult.valid) {
+        throw new Error(idResult.error);
       }
       return this.databaseManager.getKnowledgeBase(id);
     });
@@ -315,10 +356,10 @@ class Application {
       if (!this.conversationManager) {
         throw new Error('Conversation Manager not initialized');
       }
-      // Debug: Log what system message is being passed
-      console.log('[conversation:create] kbId:', kbId);
-      console.log('[conversation:create] systemMessage length:', systemMessage?.length || 0);
-      console.log('[conversation:create] systemMessage preview:', systemMessage?.substring(0, 300) || 'NO SYSTEM MESSAGE');
+      // Log conversation creation details
+      log.debug('conversation:create - kbId:', kbId);
+      log.debug('conversation:create - systemMessage length:', systemMessage?.length || 0);
+      log.debug('conversation:create - systemMessage preview:', systemMessage?.substring(0, 300) || 'NO SYSTEM MESSAGE');
       return this.conversationManager.createConversation(kbId, systemMessage);
     });
 
@@ -368,9 +409,9 @@ class Application {
         // Get conversation messages
         let messages = await this.conversationManager.getMessages(conversationId);
 
-        // Debug: Log what messages are being sent to AI
-        console.log('[conversation:addMessage] Total messages:', messages.length);
-        console.log('[conversation:addMessage] KB ID:', kbId, 'useTools:', useTools);
+        // Log what messages are being sent to AI
+        log.debug('conversation:addMessage - Total messages:', messages.length);
+        log.debug('conversation:addMessage - KB ID:', kbId, 'useTools:', useTools);
 
         // Tool calling loop - max 5 iterations to prevent infinite loops
         const MAX_TOOL_ITERATIONS = 5;
@@ -379,7 +420,7 @@ class Application {
 
         while (iteration < MAX_TOOL_ITERATIONS) {
           iteration++;
-          console.log(`[conversation:addMessage] Iteration ${iteration}`);
+          log.debug(`conversation:addMessage - Iteration ${iteration}`);
 
           // Call AI provider with tools if available
           const response = await this.aiManager.createCompletion({
@@ -391,7 +432,7 @@ class Application {
           const choice = response.choices[0];
           const assistantMessage = choice.message;
 
-          console.log('[conversation:addMessage] AI response:', {
+          log.debug('conversation:addMessage - AI response:', {
             hasContent: !!assistantMessage.content,
             hasToolCalls: !!(assistantMessage as { tool_calls?: AIToolCall[] }).tool_calls?.length,
             finishReason: choice.finishReason
@@ -400,7 +441,7 @@ class Application {
           // Check if AI wants to call tools
           const toolCalls = (assistantMessage as { tool_calls?: AIToolCall[] }).tool_calls;
           if (toolCalls && toolCalls.length > 0 && toolExecutor) {
-            console.log(`[conversation:addMessage] AI requested ${toolCalls.length} tool call(s)`);
+            log.debug(`conversation:addMessage - AI requested ${toolCalls.length} tool call(s)`);
 
             // Add assistant message with tool calls to messages array
             const assistantWithTools: AIMessage = {
@@ -412,9 +453,9 @@ class Application {
 
             // Execute each tool call and add results
             for (const toolCall of toolCalls) {
-              console.log(`[conversation:addMessage] Executing tool: ${toolCall.function.name}`);
+              log.debug(`Executing tool: ${toolCall.function.name}`);
               const result = await toolExecutor.executeTool(toolCall);
-              console.log(`[conversation:addMessage] Tool result length: ${result.length}`);
+              log.debug(`Tool result length: ${result.length}`);
 
               const toolResultMessage = createToolResultMessage(toolCall.id, result);
               messages = [...messages, toolResultMessage];
@@ -449,7 +490,7 @@ class Application {
           toolIterations: iteration,
         };
       } catch (error) {
-        console.error('AI completion failed:', error);
+        log.error('AI completion failed:', error);
 
         // Add error message to conversation
         const errorMessage = {
@@ -492,6 +533,18 @@ class Application {
     ipcMain.handle('kb:import', async (_event, xmlContent: string, filePath?: string) => {
       if (!this.knowledgeBaseManager) {
         throw new Error('Knowledge Base Manager not initialized');
+      }
+      // Validate XML content with size limits
+      const xmlResult = validateXMLContent(xmlContent);
+      if (!xmlResult.valid) {
+        throw new Error(xmlResult.error);
+      }
+      // Validate file path if provided
+      if (filePath !== undefined) {
+        const pathResult = validateFilePath(filePath);
+        if (!pathResult.valid) {
+          throw new Error(pathResult.error);
+        }
       }
       return this.knowledgeBaseManager.importFromXML(xmlContent, filePath);
     });
@@ -652,7 +705,7 @@ class Application {
         }
         return { success: true, kbId };
       } catch (error) {
-        console.error('Import failed:', error);
+        log.error('Import failed:', error);
         return { success: false, error: (error as Error).message };
       }
     });
@@ -705,7 +758,7 @@ class Application {
       this.aiManager.configureFromSettings(updatedSettings);
 
       const configuredProviders = this.aiManager.getConfiguredProviders();
-      console.log(`AI providers reconfigured: ${configuredProviders.join(', ') || 'none'}`);
+      log.info(`AI providers reconfigured: ${configuredProviders.join(', ') || 'none'}`);
 
       return true;
     });
@@ -903,6 +956,13 @@ class Application {
       if (!this.testGenerator) {
         throw new Error('Test Generator not initialized');
       }
+
+      // Validate test generation parameters
+      const validationResult = validateTestGenerationParams(params);
+      if (!validationResult.valid) {
+        throw new Error(validationResult.error);
+      }
+
       const typedParams = params as {
         kbId: number;
         moduleIds?: string[];
@@ -918,7 +978,7 @@ class Application {
         const questions = await this.testGenerator.generateQuestionsFromKB(typedParams);
         return questions;
       } catch (error) {
-        console.error('Question generation failed:', error);
+        log.error('Question generation failed:', error);
         throw error;
       }
     });
@@ -1055,6 +1115,12 @@ class Application {
         throw new Error('Database not initialized');
       }
 
+      // Validate highlight parameters
+      const validationResult = validateHighlightParams(params);
+      if (!validationResult.valid) {
+        throw new Error(validationResult.error);
+      }
+
       const result = this.databaseManager.execute(
         `INSERT INTO highlights (kb_id, section_id, start_offset, end_offset, text, color, note)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -1179,7 +1245,7 @@ class Application {
 
         return { success: true, files };
       } catch (error) {
-        console.error('File dialog error:', error);
+        log.error('File dialog error:', error);
         return { success: false, files: [], error: (error as Error).message };
       }
     });
@@ -1206,7 +1272,7 @@ class Application {
           filePaths: result.filePaths,
         };
       } catch (error) {
-        console.error('Dialog open file error:', error);
+        log.error('Dialog open file error:', error);
         throw error;
       }
     });
@@ -1245,7 +1311,7 @@ class Application {
           },
         };
       } catch (error) {
-        console.error('Save audio sample error:', error);
+        log.error('Save audio sample error:', error);
         return {
           success: false,
           error: (error as Error).message,
@@ -1277,7 +1343,7 @@ class Application {
 
         return { success: true, samples };
       } catch (error) {
-        console.error('Get voice samples error:', error);
+        log.error('Get voice samples error:', error);
         return { success: false, samples: [], error: (error as Error).message };
       }
     });
@@ -1301,7 +1367,7 @@ class Application {
 
         return { success: true };
       } catch (error) {
-        console.error('Delete voice sample error:', error);
+        log.error('Delete voice sample error:', error);
         return { success: false, error: (error as Error).message };
       }
     });
@@ -1321,7 +1387,7 @@ class Application {
 
         return { success: true };
       } catch (error) {
-        console.error('Delete voice profile error:', error);
+        log.error('Delete voice profile error:', error);
         return { success: false, error: (error as Error).message };
       }
     });
@@ -1332,36 +1398,134 @@ class Application {
       sourcePath: string;
       sampleId: string;
     }) => {
-      console.log('[DEBUG] voice:copyAudioFile called with:', options);
+      log.debug('voice:copyAudioFile called with:', options);
       try {
         const fs = await import('fs/promises');
         const voicesDir = path.join(app.getPath('userData'), 'voices', options.profileId);
-        console.log('[DEBUG] voicesDir:', voicesDir);
+        log.debug('voicesDir:', voicesDir);
 
         // Ensure directory exists
         await fs.mkdir(voicesDir, { recursive: true });
-        console.log('[DEBUG] Directory created/exists');
+        log.debug('Directory created/exists');
 
         // Copy file with new name
         const ext = path.extname(options.sourcePath);
         const destPath = path.join(voicesDir, `${options.sampleId}${ext}`);
-        console.log('[DEBUG] Copying from:', options.sourcePath, 'to:', destPath);
+        log.debug('Copying from:', options.sourcePath, 'to:', destPath);
         await fs.copyFile(options.sourcePath, destPath);
-        console.log('[DEBUG] File copied successfully');
+        log.debug('File copied successfully');
 
         return {
           success: true,
           path: destPath,
         };
       } catch (error) {
-        console.error('[DEBUG] Copy audio file error:', error);
+        log.error('Copy audio file error:', error);
         return { success: false, error: (error as Error).message };
       }
+    });
+
+    // Save voice recording from VoiceTrainingStudio (base64 data)
+    ipcMain.handle('voice:saveRecording', async (_event, options: {
+      filename: string;
+      data: string; // base64 encoded
+      profileId: string;
+    }) => {
+      try {
+        const fs = await import('fs/promises');
+        const voicesDir = path.join(app.getPath('userData'), 'voices', options.profileId);
+
+        // Ensure directory exists
+        await fs.mkdir(voicesDir, { recursive: true });
+
+        // Decode base64 and save file
+        const buffer = Buffer.from(options.data, 'base64');
+        const filePath = path.join(voicesDir, options.filename);
+        await fs.writeFile(filePath, buffer);
+
+        log.info('Voice recording saved:', filePath);
+
+        return {
+          success: true,
+          path: filePath,
+        };
+      } catch (error) {
+        log.error('Save voice recording error:', error);
+        return {
+          success: false,
+          error: (error as Error).message,
+        };
+      }
+    });
+
+    // Get audio file path for playback
+    ipcMain.handle('voice:getAudioPath', async (_event, samplePath: string) => {
+      try {
+        const fs = await import('fs/promises');
+        // Verify file exists
+        await fs.access(samplePath);
+        return { success: true, path: samplePath };
+      } catch (error) {
+        log.error('Get audio path error:', error);
+        return { success: false, error: (error as Error).message };
+      }
+    });
+
+    // ========== Vosk Speech Recognition IPC Handlers ==========
+
+    // Get Vosk service status
+    ipcMain.handle('vosk:getStatus', async () => {
+      return await voskService.getStatus();
+    });
+
+    // Initialize Vosk model (downloads if needed)
+    ipcMain.handle('vosk:initialize', async () => {
+      // Make sure service is running
+      if (!voskService.isServiceRunning()) {
+        await voskService.start();
+      }
+      return await voskService.initializeModel();
+    });
+
+    // Start speech recognition
+    ipcMain.handle('vosk:startRecognition', async (_event, sampleRate?: number) => {
+      // Make sure service is running
+      if (!voskService.isServiceRunning()) {
+        const started = await voskService.start();
+        if (!started) {
+          return { success: false, error: 'Failed to start Vosk service' };
+        }
+      }
+      const success = await voskService.startRecognition(sampleRate || 16000);
+      return { success };
+    });
+
+    // Stop speech recognition
+    ipcMain.handle('vosk:stopRecognition', async () => {
+      const success = await voskService.stopRecognition();
+      return { success };
+    });
+
+    // Send audio data for recognition
+    ipcMain.handle('vosk:sendAudio', async (_event, audioData: ArrayBuffer) => {
+      const success = await voskService.sendAudio(audioData);
+      return { success };
+    });
+
+    // Get recognition results
+    ipcMain.handle('vosk:getResults', async () => {
+      return await voskService.getResults();
     });
 
     ipcMain.handle('file:parse', async (_event, filePath: string) => {
       if (!this.knowledgeBaseManager) {
         throw new Error('Knowledge Base Manager not initialized');
+      }
+
+      // Validate file path
+      const pathResult = validateFilePath(filePath);
+      if (!pathResult.valid) {
+        return { success: false, error: pathResult.error };
       }
 
       try {
@@ -1387,7 +1551,7 @@ class Application {
           },
         };
       } catch (error) {
-        console.error('File parse error:', error);
+        log.error('File parse error:', error);
         return {
           success: false,
           error: (error as Error).message,
@@ -1398,6 +1562,22 @@ class Application {
     ipcMain.handle('file:parseMultiple', async (_event, filePaths: string[]) => {
       if (!this.knowledgeBaseManager) {
         throw new Error('Knowledge Base Manager not initialized');
+      }
+
+      // Validate array of file paths
+      const arrayResult = validateArray(
+        filePaths,
+        'filePaths',
+        100, // Max 100 files at once
+        (item) => validateFilePath(item)
+      );
+      if (!arrayResult.valid) {
+        return {
+          success: false,
+          error: arrayResult.error,
+          results: [],
+          summary: { total: 0, successful: 0, failed: 0 },
+        };
       }
 
       try {
@@ -1453,7 +1633,7 @@ class Application {
           },
         };
       } catch (error) {
-        console.error('Multiple file parse error:', error);
+        log.error('Multiple file parse error:', error);
         return {
           success: false,
           error: (error as Error).message,
@@ -1465,7 +1645,7 @@ class Application {
 
     // Debug handler for testing AI question generation
     ipcMain.handle('debug:testAIGeneration', async (_event, kbId: number) => {
-      console.log(`[DEBUG] Testing AI question generation for KB ${kbId}`);
+      log.debug(`Testing AI question generation for KB ${kbId}`);
 
       try {
         // Check DB manager
@@ -1489,14 +1669,14 @@ class Application {
         }
 
         const kb = kbs[0];
-        console.log(`[DEBUG] KB: ${kb.title}, Content length: ${kb.xml_content?.length || 0}`);
+        log.debug(`KB: ${kb.title}, Content length: ${kb.xml_content?.length || 0}`);
 
         // Get existing tests
         const tests = this.testGenerator.getTestsForKB(kbId);
-        console.log(`[DEBUG] Existing tests: ${tests.length}`);
+        log.debug(`Existing tests: ${tests.length}`);
 
         // Try to generate questions
-        console.log('[DEBUG] Generating questions with AI...');
+        log.debug('Generating questions with AI...');
         const startTime = Date.now();
 
         const questions = await this.testGenerator.generateQuestionsFromKB({
@@ -1506,7 +1686,7 @@ class Application {
         });
 
         const elapsed = Date.now() - startTime;
-        console.log(`[DEBUG] Generated ${questions.length} questions in ${elapsed}ms`);
+        log.debug(`Generated ${questions.length} questions in ${elapsed}ms`);
 
         return {
           success: true,
@@ -1521,7 +1701,7 @@ class Application {
           } : null,
         };
       } catch (error) {
-        console.error('[DEBUG] AI generation failed:', error);
+        log.error('[DEBUG] AI generation failed:', error);
         return {
           success: false,
           error: (error as Error).message,
@@ -1601,12 +1781,12 @@ class Application {
   }
 
   private async runStartupDiagnostic(): Promise<void> {
-    console.log('\n=== Startup Diagnostic ===');
+    log.info('=== Startup Diagnostic ===');
 
     try {
       // Check database
       if (!this.databaseManager) {
-        console.log('[WARN] Database not initialized');
+        log.warn('Database not initialized');
         return;
       }
 
@@ -1614,12 +1794,12 @@ class Application {
       const kbs = this.databaseManager.query<{ id: number; title: string; xml_content: string }>(
         'SELECT id, title, xml_content FROM knowledge_bases'
       );
-      console.log(`[INFO] Knowledge Bases: ${kbs.length}`);
+      log.info(`Knowledge Bases: ${kbs.length}`);
 
       for (const kb of kbs) {
         const contentLen = kb.xml_content?.length || 0;
         const hasContent = contentLen > 500 ? '[OK]' : '[EMPTY]';
-        console.log(`  - [${kb.id}] ${kb.title} (${contentLen} chars) ${hasContent}`);
+        log.info(`  - [${kb.id}] ${kb.title} (${contentLen} chars) ${hasContent}`);
 
         // Parse XML and check structure for debugging
         if (this.knowledgeBaseManager) {
@@ -1628,14 +1808,14 @@ class Application {
             const moduleCount = parsed.modules?.length || 0;
             const chapterCount = parsed.totalChapters || 0;
             const sectionCount = parsed.totalSections || 0;
-            console.log(`      -> Parsed: ${moduleCount} modules, ${chapterCount} chapters, ${sectionCount} sections`);
+            log.debug(`      -> Parsed: ${moduleCount} modules, ${chapterCount} chapters, ${sectionCount} sections`);
             if (moduleCount === 0) {
               // Log XML structure for debugging
               const xmlPreview = kb.xml_content?.substring(0, 500) || '';
-              console.log(`      -> [WARN] 0 modules! XML preview: ${xmlPreview.replace(/\n/g, ' ').substring(0, 200)}...`);
+              log.warn(`      -> 0 modules! XML preview: ${xmlPreview.replace(/\n/g, ' ').substring(0, 200)}...`);
             }
           } catch (parseErr) {
-            console.log(`      -> [ERROR] Parse failed: ${(parseErr as Error).message}`);
+            log.error(`      -> Parse failed: ${(parseErr as Error).message}`);
           }
         }
       }
@@ -1644,41 +1824,43 @@ class Application {
       const tests = this.databaseManager.query<{ id: number; kb_id: number; title: string; type: string }>(
         'SELECT id, kb_id, title, type FROM practice_tests'
       );
-      console.log(`[INFO] Practice Tests: ${tests.length}`);
-      tests.forEach(t => console.log(`  - [${t.id}] KB:${t.kb_id} "${t.title}" (${t.type})`));
+      log.info(`Practice Tests: ${tests.length}`);
+      tests.forEach(t => log.debug(`  - [${t.id}] KB:${t.kb_id} "${t.title}" (${t.type})`));
 
       // Check AI config
       if (this.aiManager) {
         const providers = this.aiManager.getConfiguredProviders();
-        console.log(`[INFO] AI Providers: ${providers.join(', ') || 'none'}`);
+        log.info(`AI Providers: ${providers.join(', ') || 'none'}`);
       } else {
-        console.log('[WARN] AI Manager not initialized');
+        log.warn('AI Manager not initialized');
       }
 
       // If there are KBs without tests, suggest running a study session
       const kbsWithoutTests = kbs.filter(kb => !tests.some(t => t.kb_id === kb.id));
       if (kbsWithoutTests.length > 0) {
-        console.log(`\n[TIP] ${kbsWithoutTests.length} KB(s) have no practice tests yet.`);
-        console.log('      Starting a Study session will auto-generate AI questions.');
+        log.info(`${kbsWithoutTests.length} KB(s) have no practice tests yet. Starting a Study session will auto-generate AI questions.`);
       }
 
-      console.log('\n=== End Diagnostic ===\n');
+      log.info('=== End Diagnostic ===');
     } catch (error) {
-      console.error('[ERROR] Diagnostic failed:', error);
+      log.error('Diagnostic failed:', error);
     }
   }
 
   private async cleanup(): Promise<void> {
-    console.log('Cleaning up application...');
+    log.info('Cleaning up application...');
 
     // Cleanup OpenVoice service
     openVoiceService.cleanup();
+
+    // Cleanup Vosk service
+    voskService.cleanup();
 
     if (this.databaseManager) {
       await this.databaseManager.close();
     }
 
-    console.log('Cleanup complete');
+    log.info('Cleanup complete');
   }
 }
 

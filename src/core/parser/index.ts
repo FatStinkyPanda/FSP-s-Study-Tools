@@ -8,6 +8,7 @@
  * - Markdown (.md, .markdown, .mdown, .mkd)
  * - EPUB e-books (.epub)
  * - PowerPoint (.pptx, .ppt)
+ * - Images (.png, .jpg, .jpeg, .gif, .bmp, .webp, .svg, .tiff, .tif)
  */
 
 export type { IParser, ParsedDocument, ParsedContentElement } from './IParser';
@@ -17,4 +18,5 @@ export { TXTParser } from './TXTParser';
 export { MarkdownParser } from './MarkdownParser';
 export { EPUBParser } from './EPUBParser';
 export { PPTXParser } from './PPTXParser';
+export { ImageParser } from './ImageParser';
 export { ParserManager } from './ParserManager';

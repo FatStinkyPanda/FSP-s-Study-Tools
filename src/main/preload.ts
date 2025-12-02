@@ -9,6 +9,28 @@ export interface OpenVoiceStatus {
   checkpointsReady: boolean;
 }
 
+// Vosk speech recognition result interface
+export interface VoskResult {
+  type: 'partial' | 'final';
+  text: string;
+  words?: Array<{
+    word: string;
+    start: number;
+    end: number;
+    conf: number;
+  }>;
+}
+
+// Vosk status interface
+export interface VoskStatus {
+  available: boolean;
+  modelInitialized: boolean;
+  isRecognizing: boolean;
+  modelExists: boolean;
+  modelPath: string | null;
+  error: string | null;
+}
+
 // OpenVoice profile interface
 export interface OpenVoiceProfile {
   id: string;
@@ -55,6 +77,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('openvoice:downloadProgress', handler);
     return () => ipcRenderer.removeListener('openvoice:downloadProgress', handler);
   },
+
+  // OpenVoice training retry event listener
+  onOpenVoiceTrainingRetry: (callback: (info: TrainingRetryInfo) => void) => {
+    const handler = (_event: IpcRendererEvent, info: TrainingRetryInfo) => callback(info);
+    ipcRenderer.on('openvoice:trainingRetry', handler);
+    return () => ipcRenderer.removeListener('openvoice:trainingRetry', handler);
+  },
+
+  // Vosk speech recognition results event listener
+  onVoskResults: (callback: (results: VoskResult[]) => void) => {
+    const handler = (_event: IpcRendererEvent, results: VoskResult[]) => callback(results);
+    ipcRenderer.on('vosk:results', handler);
+    return () => ipcRenderer.removeListener('vosk:results', handler);
+  },
 });
 
 // Update status interface
@@ -71,6 +107,15 @@ export interface DownloadProgress {
   error?: string;
 }
 
+// Training retry info interface
+export interface TrainingRetryInfo {
+  profileId: string;
+  attempt: number;
+  maxAttempts: number;
+  lastError: string;
+  message: string;
+}
+
 // Type definitions for TypeScript
 export interface ElectronAPI {
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
@@ -78,6 +123,8 @@ export interface ElectronAPI {
   onOpenVoiceStatus: (callback: (status: OpenVoiceStatus) => void) => () => void;
   onOpenVoiceTrainingUpdate: (callback: (profile: OpenVoiceProfile) => void) => () => void;
   onOpenVoiceDownloadProgress: (callback: (status: DownloadProgress) => void) => () => void;
+  onOpenVoiceTrainingRetry: (callback: (info: TrainingRetryInfo) => void) => () => void;
+  onVoskResults: (callback: (results: VoskResult[]) => void) => () => void;
 }
 
 declare global {

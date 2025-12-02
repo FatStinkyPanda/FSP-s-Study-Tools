@@ -6,21 +6,22 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { rendererLogger } from '../shared/logger';
 
-console.log('[Renderer] FSP Study Tools initializing...');
+rendererLogger.info('FSP Study Tools initializing...');
 
 // Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', () => {
   const rootElement = document.getElementById('root');
 
   if (!rootElement) {
-    console.error('[Renderer] Root element not found!');
+    rendererLogger.error('Root element not found!');
     return;
   }
 
   const root = createRoot(rootElement);
   root.render(<App />);
 
-  console.log('[Renderer] React app rendered successfully');
+  rendererLogger.info('React app rendered successfully');
 });
 

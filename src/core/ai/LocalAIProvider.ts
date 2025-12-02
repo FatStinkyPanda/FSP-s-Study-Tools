@@ -9,6 +9,9 @@ import {
 } from '../../shared/ai-types';
 import * as path from 'path';
 import * as fs from 'fs';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('LocalAI');
 
 /**
  * Local AI Provider for running models offline
@@ -42,7 +45,7 @@ export class LocalAIProvider extends BaseAIProvider {
     await this.detectAvailableBackends();
     this.initialized = true;
 
-    console.log(`LocalAIProvider initialized. Available backends: ${Array.from(this.availableBackends).join(', ') || 'none'}`);
+    log.info(`LocalAIProvider initialized. Available backends: ${Array.from(this.availableBackends).join(', ') || 'none'}`);
   }
 
   /**
@@ -54,9 +57,9 @@ export class LocalAIProvider extends BaseAIProvider {
       // @ts-ignore - optional dependency
       await import('onnxruntime-node');
       this.availableBackends.add('onnx');
-      console.log('[LocalAI] ONNX Runtime available');
+      log.debug('ONNX Runtime available');
     } catch {
-      console.log('[LocalAI] ONNX Runtime not available');
+      log.debug('ONNX Runtime not available');
     }
 
     // Check for node-llama-cpp (optional dependency)
@@ -64,9 +67,9 @@ export class LocalAIProvider extends BaseAIProvider {
       // @ts-ignore - optional dependency
       await import('node-llama-cpp');
       this.availableBackends.add('llama-cpp');
-      console.log('[LocalAI] node-llama-cpp available');
+      log.debug('node-llama-cpp available');
     } catch {
-      console.log('[LocalAI] node-llama-cpp not available');
+      log.debug('node-llama-cpp not available');
     }
 
     // Check for Transformers.js (optional dependency)
@@ -74,9 +77,9 @@ export class LocalAIProvider extends BaseAIProvider {
       // @ts-ignore - optional dependency
       await import('@xenova/transformers');
       this.availableBackends.add('transformers-js');
-      console.log('[LocalAI] Transformers.js available');
+      log.debug('Transformers.js available');
     } catch {
-      console.log('[LocalAI] Transformers.js not available');
+      log.debug('Transformers.js not available');
     }
   }
 
@@ -97,7 +100,7 @@ export class LocalAIProvider extends BaseAIProvider {
 
     if (config.loadOnStartup) {
       this.loadModel(config.id).catch(error => {
-        console.error(`Failed to load model ${config.id} on startup:`, error);
+        log.error(`Failed to load model ${config.id} on startup:`, error);
       });
     }
   }
@@ -149,7 +152,7 @@ export class LocalAIProvider extends BaseAIProvider {
       }
 
       this.models.set(modelId, loadedModel);
-      console.log(`Model loaded successfully: ${modelId}`);
+      log.info(`Model loaded successfully: ${modelId}`);
     } catch (error) {
       throw new AIProviderError(
         `Failed to load model ${modelId}: ${(error as Error).message}`,
@@ -192,7 +195,7 @@ export class LocalAIProvider extends BaseAIProvider {
             finishReason: 'stop',
           };
         } catch (error) {
-          console.error('ONNX inference error:', error);
+          log.error('ONNX inference error:', error);
           return {
             text: `Error during ONNX inference: ${(error as Error).message}`,
             finishReason: 'error',
@@ -239,7 +242,7 @@ export class LocalAIProvider extends BaseAIProvider {
             finishReason: 'stop',
           };
         } catch (error) {
-          console.error('GGUF inference error:', error);
+          log.error('GGUF inference error:', error);
           return {
             text: `Error during GGUF inference: ${(error as Error).message}`,
             finishReason: 'error',
@@ -291,7 +294,7 @@ export class LocalAIProvider extends BaseAIProvider {
             finishReason: 'stop',
           };
         } catch (error) {
-          console.error('Transformers.js inference error:', error);
+          log.error('Transformers.js inference error:', error);
           return {
             text: `Error during inference: ${(error as Error).message}`,
             finishReason: 'error',
@@ -368,12 +371,12 @@ export class LocalAIProvider extends BaseAIProvider {
           }
         }
       } catch (error) {
-        console.error(`Error unloading model ${modelId}:`, error);
+        log.error(`Error unloading model ${modelId}:`, error);
       }
     }
 
     this.models.delete(modelId);
-    console.log(`Model unloaded: ${modelId}`);
+    log.info(`Model unloaded: ${modelId}`);
   }
 
   /**

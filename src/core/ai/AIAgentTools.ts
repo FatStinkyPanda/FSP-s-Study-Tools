@@ -1,6 +1,9 @@
 import { AITool, AIToolCall, AIMessage } from '../../shared/ai-types';
 import { KnowledgeBaseManager } from '../knowledge/KnowledgeBaseManager';
 import { ParsedKnowledgeBase } from '../knowledge/XMLParser';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('AIAgentTools');
 
 /**
  * Tool definitions for the AI tutor agent
@@ -139,7 +142,7 @@ export class AIAgentToolExecutor {
 
     try {
       const args = JSON.parse(argsString);
-      console.log(`[AIAgentTools] Executing tool: ${name}`, args);
+      log.debug(`Executing tool: ${name}`, args);
 
       switch (name) {
         case 'search_kb_content':
@@ -161,7 +164,7 @@ export class AIAgentToolExecutor {
           return JSON.stringify({ error: `Unknown tool: ${name}` });
       }
     } catch (error) {
-      console.error(`[AIAgentTools] Tool execution error:`, error);
+      log.error('Tool execution error:', error);
       return JSON.stringify({ error: `Tool execution failed: ${(error as Error).message}` });
     }
   }
