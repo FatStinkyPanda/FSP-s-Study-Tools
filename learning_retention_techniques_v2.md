@@ -15,7 +15,7 @@ A complete synthesis of evidence-based strategies, emerging research, physical/s
 3. [Jasper Overview](#part-iii-jasper-ai-learning-assistant)
 4. [Jasper Features and Capabilities](#jasper-features-and-capabilities)
 5. [Jasper Technical Specifications](#jasper-technical-specifications)
-6. [Jasper Voice Integration (OpenVoice)](#jasper-voice-integration-openvoice)
+6. [Jasper Voice Integration (XTTS v2)](#jasper-voice-integration-xtts-v2)
 7. [Jasper Live Chat System](#jasper-live-chat-system)
 
 ### Part III: Reference
@@ -782,7 +782,7 @@ All program-integrated techniques are accessible through a dedicated settings pa
 - **Role:** AI Learning Assistant
 - **Visual Representation:** Live Dynamic Orb (see Visual Persona section)
 - **Location:** Dedicated tab within FSP's Study Tools
-- **Voice:** OpenVoice integration for natural speech
+- **Voice:** XTTS v2 integration for natural speech with voice cloning
 
 ### Primary Functions
 
@@ -923,34 +923,34 @@ Jasper is represented by a live, dynamic orb that provides visual feedback durin
 
 ---
 
-## Jasper Voice Integration (OpenVoice)
+## Jasper Voice Integration (XTTS v2)
 
-Jasper integrates with [OpenVoice](https://github.com/myshell-ai/OpenVoice) for comprehensive voice capabilities.
+Jasper integrates with [Coqui XTTS v2](https://github.com/coqui-ai/TTS) for comprehensive voice capabilities.
 
 ### Text-to-Speech (TTS)
 
 **Features:**
-- Natural, human-like speech synthesis
-- Multiple voice options (male, female, various accents)
-- Adjustable speech rate
-- Adjustable pitch
-- Emotional tone options (neutral, encouraging, serious)
-- Real-time streaming for immediate response
+- Natural, human-like speech synthesis with zero-shot voice cloning
+- Custom voice profiles from reference audio (6-30 seconds)
+- Multi-language support (16 languages)
+- Adjustable speech rate (0.5x - 2.0x)
+- Volume control (0% - 300%)
+- Automatic text chunking for long content
 
 **Implementation:**
 ```
-OpenVoice TTS Integration
+XTTS v2 TTS Integration
 ├── Voice Selection
-│   ├── Default Voice (configurable)
-│   ├── Voice Library
-│   └── Custom Voice Cloning (optional)
+│   ├── Default Browser Voices (Web Speech API)
+│   ├── Voice Library (custom profiles)
+│   └── Zero-Shot Voice Cloning (reference audio)
 ├── Speech Parameters
 │   ├── Rate: 0.5x - 2.0x
-│   ├── Pitch: -50% to +50%
-│   └── Volume: 0% - 100%
+│   ├── Volume: 0% - 300%
+│   └── Language: 16 languages
 └── Output
-    ├── Real-time streaming
     ├── Audio file generation
+    ├── Automatic chunking for long text
     └── Synchronized text highlighting
 ```
 
@@ -966,19 +966,20 @@ OpenVoice TTS Integration
 
 **Implementation:**
 ```
-OpenVoice STT Integration
+Vosk STT Integration (Offline)
 ├── Input Processing
 │   ├── Microphone selection
-│   ├── Noise filtering
+│   ├── 16kHz audio capture
 │   └── Voice activity detection
 ├── Recognition
 │   ├── Real-time transcription
+│   ├── Grammar constraints (for Voice Training)
 │   ├── Confidence scoring
-│   └── Punctuation insertion
+│   └── Word-level timestamps
 └── Output
-    ├── Live text display
+    ├── Live partial results
     ├── Final transcript
-    └── Command parsing
+    └── Word detection events
 ```
 
 ### Text Highlighting During Speech

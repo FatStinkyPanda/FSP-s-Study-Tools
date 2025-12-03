@@ -487,12 +487,13 @@ FSP's Study Tools features an advanced text-to-speech system with synchronized v
 
 ### Voice System Features
 
-**OpenVoice Integration**
-- Powered by [OpenVoice](https://github.com/myshell-ai/OpenVoice) - an open-source instant voice cloning solution
-- **5 Default Voices:** Natural male and female voices with various accents
-- **Custom Voice Training:** Users can train the system with their own voice
+**XTTS v2 Voice Cloning**
+- Powered by [Coqui XTTS v2](https://github.com/coqui-ai/TTS) - high-quality zero-shot voice cloning
+- **Zero-Shot Cloning:** No training needed - just provide reference audio (6-30 seconds)
+- **Custom Voice Profiles:** Create voice profiles from your own audio recordings
+- **Multi-Language Support:** English, Spanish, French, German, Italian, Portuguese, Polish, Turkish, Russian, Dutch, Czech, Arabic, Chinese, Japanese, Hungarian, Korean
 - **Voice Library:** Save and name multiple custom voices for different contexts
-- Adjustable speech rate (0.5x - 2.0x), pitch, and volume
+- Adjustable speech rate (0.5x - 2.0x) and volume (0% - 300%)
 
 **Synchronized Text Highlighting**
 - **Hotspot Highlighting:** Current active word is prominently highlighted with high visibility
@@ -510,15 +511,14 @@ FSP's Study Tools features an advanced text-to-speech system with synchronized v
 **Voice Settings**
 ```
 Voice Selection:
-├── Default Voices (5 built-in options)
-├── Custom Trained Voices (user-created)
+├── Default Browser Voices (Web Speech API)
+├── Custom XTTS v2 Voices (zero-shot cloned)
 └── Voice Library (saved named voices)
 
 Speech Parameters:
 ├── Rate: 0.5x - 2.0x (default: 1.0x)
-├── Pitch: -50% to +50% (default: 0%)
-├── Volume: 0% - 100% (default: 80%)
-└── Emotional Tone: neutral, encouraging, serious
+├── Volume: 0% - 300% (default: 100%)
+└── Language: 16 languages supported
 
 Highlight Settings:
 ├── Style: word, karaoke, underline, wave
@@ -644,7 +644,7 @@ A comprehensive learning session integrating all techniques:
 - [x] Text-to-Voice with synchronized highlighting (SyncedTextReader)
 - [x] Jasper Study mode (5 learning techniques: retrieval, elaboration, Feynman, interleaving, dual-coding)
 - [x] Jasper Review mode (SM-2 spaced repetition with flashcard UI)
-- [x] OpenVoice custom voice cloning (profile training, synthesis, audio validation)
+- [x] XTTS v2 voice cloning (zero-shot cloning, synthesis, multi-language support)
 
 ### Phase 5: UI/UX Development
 - [x] UI implementation (React + Electron)

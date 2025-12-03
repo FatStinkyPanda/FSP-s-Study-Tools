@@ -1748,7 +1748,7 @@ class Application {
           } : null,
         };
       } catch (error) {
-        log.error('[DEBUG] AI generation failed:', error);
+        log.error('AI question generation failed:', error);
         return {
           success: false,
           error: (error as Error).message,
@@ -1756,8 +1756,11 @@ class Application {
       }
     });
 
-    // Debug handler to get KB XML content
+    // Debug handler to get KB XML content (development only)
     ipcMain.handle('debug:getKBXml', async (_event, kbId: number) => {
+      if (!isDev) {
+        return { success: false, error: 'Debug handlers disabled in production' };
+      }
       if (!this.databaseManager) {
         return { success: false, error: 'Database not initialized' };
       }
@@ -1782,8 +1785,11 @@ class Application {
       };
     });
 
-    // Debug handler to list DB state
+    // Debug handler to list DB state (development only)
     ipcMain.handle('debug:dbState', async () => {
+      if (!isDev) {
+        return { success: false, error: 'Debug handlers disabled in production' };
+      }
       if (!this.databaseManager) {
         return { success: false, error: 'Database not initialized' };
       }

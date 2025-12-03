@@ -18,4 +18,10 @@ module.exports = {
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
   verbose: true,
+  // Memory optimization settings
+  maxWorkers: 2,  // Limit parallel workers to reduce memory usage
+  workerIdleMemoryLimit: '512MB',  // Restart workers when they exceed memory limit
+  testTimeout: 30000,  // 30 second timeout for tests
+  // Force garbage collection between tests
+  logHeapUsage: true,
 };

@@ -692,12 +692,19 @@ class XTTSServiceManager {
     status: string;
     error?: string;
   }> {
-    const result = await this.makeRequest('GET', '/checkpoints/download/status');
+    // XTTS v2 handles model download automatically via the TTS library
+    // We check model status instead of a separate download endpoint
+    if (!this.process) {
+      return { downloading: false, progress: 0, status: 'Service not running' };
+    }
+
+    const result = await this.makeRequest('GET', '/model/status');
     if (result.success) {
+      const initialized = result.data?.initialized || false;
       return {
-        downloading: result.data?.downloading || false,
-        progress: result.data?.progress || 0,
-        status: result.data?.status || '',
+        downloading: false,  // XTTS downloads during initialization
+        progress: initialized ? 100 : 0,
+        status: initialized ? 'Model ready' : 'Model not initialized',
         error: result.data?.error,
       };
     }
