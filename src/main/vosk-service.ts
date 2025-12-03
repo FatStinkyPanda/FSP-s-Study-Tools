@@ -84,6 +84,8 @@ class VoskServiceManager {
   private isRunning = false;
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private resultsPollingInterval: NodeJS.Timeout | null = null;
+  private consecutiveHealthFailures = 0;
+  private static readonly MAX_HEALTH_FAILURES = 3;  // Restart after 3 consecutive failures
 
   /**
    * Set the main window for IPC communication
@@ -303,19 +305,43 @@ class VoskServiceManager {
   }
 
   /**
-   * Start health check interval
+   * Start health check interval with automatic restart on failures
    */
   private startHealthCheck(): void {
+    this.consecutiveHealthFailures = 0;
+
     this.healthCheckInterval = setInterval(async () => {
       if (!this.isRunning) return;
 
       try {
         const response = await fetch(`${VOSK_SERVICE_URL}/health`);
-        if (!response.ok) {
-          log.warn('Vosk service health check failed');
+        if (response.ok) {
+          // Reset failure count on successful health check
+          this.consecutiveHealthFailures = 0;
+        } else {
+          this.consecutiveHealthFailures++;
+          log.warn(`Vosk service health check failed (${this.consecutiveHealthFailures}/${VoskServiceManager.MAX_HEALTH_FAILURES})`);
         }
-      } catch {
-        log.warn('Vosk service not responding');
+      } catch (err) {
+        this.consecutiveHealthFailures++;
+        log.warn(`Vosk service not responding (${this.consecutiveHealthFailures}/${VoskServiceManager.MAX_HEALTH_FAILURES}):`, err);
+      }
+
+      // Auto-restart if too many consecutive failures
+      if (this.consecutiveHealthFailures >= VoskServiceManager.MAX_HEALTH_FAILURES) {
+        log.error(`Vosk service failed ${VoskServiceManager.MAX_HEALTH_FAILURES} consecutive health checks - restarting...`);
+        this.consecutiveHealthFailures = 0;
+
+        // Stop and restart the service
+        await this.stop();
+        setTimeout(async () => {
+          const restarted = await this.start();
+          if (restarted) {
+            log.info('Vosk service successfully restarted after health check failures');
+          } else {
+            log.error('Failed to restart Vosk service after health check failures');
+          }
+        }, 1000);
       }
     }, 10000);
   }

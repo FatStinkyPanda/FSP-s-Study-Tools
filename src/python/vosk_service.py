@@ -19,6 +19,7 @@ import threading
 import queue
 import wave
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional, Callable
 
@@ -82,8 +83,18 @@ def get_model_dir() -> Path:
     return model_dir
 
 
-def download_model(progress_callback: Optional[Callable] = None) -> str:
-    """Download the Vosk model if not already present."""
+def download_model(progress_callback: Optional[Callable] = None, max_retries: int = 3) -> str:
+    """Download the Vosk model if not already present.
+
+    Implements exponential backoff retry for transient network errors.
+
+    Args:
+        progress_callback: Optional callback for progress updates
+        max_retries: Maximum number of retry attempts (default: 3)
+
+    Returns:
+        Path to the downloaded model directory
+    """
     model_dir = get_model_dir()
     model_path = model_dir / MODEL_NAME
 
@@ -94,43 +105,60 @@ def download_model(progress_callback: Optional[Callable] = None) -> str:
     logger.info(f"Downloading Vosk model from {MODEL_URL}")
 
     zip_path = model_dir / f"{MODEL_NAME}.zip"
+    last_error = None
 
-    try:
-        # Download with progress
-        response = requests.get(MODEL_URL, stream=True)
-        response.raise_for_status()
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0:
+                # Exponential backoff: 2s, 4s, 8s...
+                delay = 2 ** attempt
+                logger.info(f"Retry attempt {attempt + 1}/{max_retries} after {delay}s delay...")
+                if progress_callback:
+                    progress_callback(0, f"Retrying download (attempt {attempt + 1}/{max_retries})...")
+                time.sleep(delay)
 
-        total_size = int(response.headers.get('content-length', 0))
-        downloaded = 0
+            # Download with progress
+            response = requests.get(MODEL_URL, stream=True, timeout=60)
+            response.raise_for_status()
 
-        with open(zip_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    if progress_callback and total_size > 0:
-                        progress = int((downloaded / total_size) * 100)
-                        progress_callback(progress, f"Downloading model: {progress}%")
+            total_size = int(response.headers.get('content-length', 0))
+            downloaded = 0
 
-        logger.info("Download complete, extracting...")
-        if progress_callback:
-            progress_callback(100, "Extracting model...")
+            with open(zip_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_callback and total_size > 0:
+                            progress = int((downloaded / total_size) * 100)
+                            progress_callback(progress, f"Downloading model: {progress}%")
 
-        # Extract
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(model_dir)
+            logger.info("Download complete, extracting...")
+            if progress_callback:
+                progress_callback(100, "Extracting model...")
 
-        # Clean up zip file
-        zip_path.unlink()
+            # Extract
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(model_dir)
 
-        logger.info(f"Model extracted to {model_path}")
-        return str(model_path)
-
-    except Exception as e:
-        logger.error(f"Failed to download model: {e}")
-        if zip_path.exists():
+            # Clean up zip file
             zip_path.unlink()
-        raise
+
+            logger.info(f"Model extracted to {model_path}")
+            return str(model_path)
+
+        except (requests.exceptions.RequestException, IOError) as e:
+            last_error = e
+            logger.warning(f"Download attempt {attempt + 1}/{max_retries} failed: {e}")
+            if zip_path.exists():
+                try:
+                    zip_path.unlink()
+                except OSError:
+                    pass
+
+    # All retries exhausted
+    logger.error(f"Failed to download model after {max_retries} attempts: {last_error}")
+    raise RuntimeError(f"Failed to download Vosk model after {max_retries} attempts: {last_error}")
 
 
 def initialize_model(progress_callback: Optional[Callable] = None) -> bool:

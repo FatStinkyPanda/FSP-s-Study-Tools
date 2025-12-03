@@ -547,8 +547,8 @@ class TTSSynthesizer:
             for temp_file in temp_files:
                 try:
                     os.remove(temp_file)
-                except:
-                    pass
+                except OSError as e:
+                    logger.debug(f"Failed to cleanup temp file {temp_file}: {e}")
 
             return {
                 'audio_path': str(output_path),

@@ -84,9 +84,12 @@ class XTTSServiceManager {
   private process: ChildProcess | null = null;
   private isStarting = false;
   private statusCheckInterval: NodeJS.Timeout | null = null;
+  private healthCheckInterval: NodeJS.Timeout | null = null;
   private mainWindow: BrowserWindow | null = null;
   private autoShutdownTimer: NodeJS.Timeout | null = null;
   private lastActivityTime: number = 0;
+  private consecutiveHealthFailures = 0;
+  private static readonly MAX_HEALTH_FAILURES = 3;  // Restart after 3 consecutive failures
 
   constructor() {
     this.setupIPCHandlers();
@@ -341,6 +344,9 @@ class XTTSServiceManager {
       // Start status monitoring
       this.startStatusMonitoring();
 
+      // Start health check for automatic restart on failures
+      this.startHealthCheck();
+
       // Start auto-shutdown timer
       this.resetAutoShutdownTimer();
 
@@ -359,6 +365,9 @@ class XTTSServiceManager {
       clearTimeout(this.autoShutdownTimer);
       this.autoShutdownTimer = null;
     }
+
+    // Stop health check
+    this.stopHealthCheck();
 
     if (this.statusCheckInterval) {
       clearInterval(this.statusCheckInterval);
@@ -846,6 +855,65 @@ class XTTSServiceManager {
       }
       this.sendStatusUpdate();
     }, 5000);
+  }
+
+  /**
+   * Start health check interval with automatic restart on failures
+   */
+  private startHealthCheck(): void {
+    this.consecutiveHealthFailures = 0;
+
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+    }
+
+    this.healthCheckInterval = setInterval(async () => {
+      if (!this.process) {
+        this.stopHealthCheck();
+        return;
+      }
+
+      try {
+        const result = await this.makeRequest('GET', '/health');
+        if (result.success) {
+          // Reset failure count on successful health check
+          this.consecutiveHealthFailures = 0;
+        } else {
+          this.consecutiveHealthFailures++;
+          log.warn(`XTTS service health check failed (${this.consecutiveHealthFailures}/${XTTSServiceManager.MAX_HEALTH_FAILURES})`);
+        }
+      } catch (err) {
+        this.consecutiveHealthFailures++;
+        log.warn(`XTTS service not responding (${this.consecutiveHealthFailures}/${XTTSServiceManager.MAX_HEALTH_FAILURES}):`, err);
+      }
+
+      // Auto-restart if too many consecutive failures
+      if (this.consecutiveHealthFailures >= XTTSServiceManager.MAX_HEALTH_FAILURES) {
+        log.error(`XTTS service failed ${XTTSServiceManager.MAX_HEALTH_FAILURES} consecutive health checks - restarting...`);
+        this.consecutiveHealthFailures = 0;
+
+        // Stop and restart the service
+        await this.stopService();
+        setTimeout(async () => {
+          const restarted = await this.startService();
+          if (restarted) {
+            log.info('XTTS service successfully restarted after health check failures');
+          } else {
+            log.error('Failed to restart XTTS service after health check failures');
+          }
+        }, 2000);
+      }
+    }, 15000);  // Check every 15 seconds (XTTS is heavier than Vosk)
+  }
+
+  /**
+   * Stop health check interval
+   */
+  private stopHealthCheck(): void {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
   }
 
   private async pollTrainingProgress(profileId: string) {

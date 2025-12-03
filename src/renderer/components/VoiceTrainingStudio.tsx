@@ -567,12 +567,14 @@ function VoiceTrainingStudio({
             const audioToSend = audioAccumulator.slice(0, targetChunkSize);
             audioAccumulator = audioAccumulator.slice(targetChunkSize);
 
-            window.electronAPI.invoke('vosk:sendAudioArray', audioToSend).catch(() => {
-              // Silently ignore send errors - they're non-fatal
+            window.electronAPI.invoke('vosk:sendAudioArray', audioToSend).catch((err) => {
+              // Log send errors for debugging but don't interrupt capture
+              log.debug('Audio send to Vosk failed (non-fatal):', err);
             });
           }
-        } catch {
-          // Ignore errors during capture - non-fatal
+        } catch (captureErr) {
+          // Log capture errors for debugging but don't interrupt the polling loop
+          log.debug('Audio capture error (non-fatal):', captureErr);
         }
       }, 20); // 20ms polling for very responsive speech detection
 
