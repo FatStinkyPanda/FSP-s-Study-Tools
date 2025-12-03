@@ -442,7 +442,8 @@ function App() {
         let newProgress = profile.trainingProgress;
         let newError = profile.trainingError;
 
-        if (ovProfile.state === 'extracting') {
+        // XTTS uses 'processing' state instead of 'extracting'
+        if (ovProfile.state === 'processing') {
           newStatus = 'training';
           newProgress = ovProfile.progress;
         } else if (ovProfile.state === 'ready') {

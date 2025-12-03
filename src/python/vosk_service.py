@@ -58,10 +58,15 @@ latest_results: list = []
 results_lock = threading.Lock()
 
 # Model configuration
-# Using vosk-model-small-en-us-0.15 - 40MB, fast and accurate
-MODEL_URL = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
-MODEL_NAME = "vosk-model-small-en-us-0.15"
-MODEL_SIZE_MB = 40
+# Using vosk-model-en-us-0.22-lgraph - 128MB, excellent accuracy, good speed balance
+# This is a lightweight graph model with much better accuracy than the small model
+MODEL_URL = "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22-lgraph.zip"
+MODEL_NAME = "vosk-model-en-us-0.22-lgraph"
+MODEL_SIZE_MB = 128
+
+# Grammar constraint for Voice Training (when set, limits recognition to these words)
+current_grammar: Optional[list] = None
+grammar_lock = threading.Lock()
 
 
 def get_model_dir() -> Path:
@@ -185,8 +190,36 @@ def recognize_audio_data(audio_data: bytes, sample_rate: int = 16000) -> dict:
         return {"error": str(e)}
 
 
-def start_streaming_recognition(sample_rate: int = 16000):
-    """Start streaming recognition in a background thread."""
+def set_grammar(words: Optional[list] = None):
+    """Set grammar constraint for recognition (or None for free-form recognition)."""
+    global current_grammar
+    with grammar_lock:
+        if words:
+            # Create unique word list, lowercase, and add common variations
+            unique_words = list(set(w.lower().strip() for w in words if w.strip()))
+            # Add common filler words for natural speech
+            fillers = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+                      'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
+                      'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+                      'should', 'may', 'might', 'must', 'shall', 'can', 'it', 'its', 'this',
+                      'that', 'these', 'those', 'i', 'you', 'he', 'she', 'we', 'they', 'my',
+                      'your', 'his', 'her', 'our', 'their', 'me', 'him', 'us', 'them']
+            unique_words.extend(fillers)
+            current_grammar = list(set(unique_words))
+            logger.info(f"Grammar set with {len(current_grammar)} words")
+        else:
+            current_grammar = None
+            logger.info("Grammar cleared - free-form recognition enabled")
+
+
+def start_streaming_recognition(sample_rate: int = 16000, grammar: Optional[list] = None):
+    """Start streaming recognition in a background thread.
+
+    Args:
+        sample_rate: Audio sample rate (default 16000)
+        grammar: Optional list of words to constrain recognition to.
+                 If None, uses current_grammar (if set) or free-form recognition.
+    """
     global is_recognizing, recognition_thread, stop_recognition_event, audio_queue, latest_results
 
     if not is_initialized or vosk_model is None:
@@ -195,6 +228,10 @@ def start_streaming_recognition(sample_rate: int = 16000):
     if is_recognizing:
         logger.warning("Recognition already running")
         return True
+
+    # Set grammar if provided
+    if grammar is not None:
+        set_grammar(grammar)
 
     stop_recognition_event.clear()
     audio_queue = queue.Queue()
@@ -206,7 +243,18 @@ def start_streaming_recognition(sample_rate: int = 16000):
         nonlocal sample_rate
 
         try:
-            recognizer = KaldiRecognizer(vosk_model, sample_rate)
+            # Create recognizer - with or without grammar constraint
+            with grammar_lock:
+                if current_grammar:
+                    # Use grammar-constrained recognizer for better accuracy on known vocabulary
+                    grammar_json = json.dumps(current_grammar)
+                    recognizer = KaldiRecognizer(vosk_model, sample_rate, grammar_json)
+                    logger.info(f"Created grammar-constrained recognizer with {len(current_grammar)} words")
+                else:
+                    # Free-form recognition for general speech-to-text
+                    recognizer = KaldiRecognizer(vosk_model, sample_rate)
+                    logger.info("Created free-form recognizer (no grammar constraints)")
+
             recognizer.SetWords(True)
             recognizer.SetPartialWords(True)
 
@@ -331,9 +379,18 @@ def initialize():
 
 @app.route('/start', methods=['POST'])
 def start_recognition():
-    """Start streaming recognition."""
+    """Start streaming recognition.
+
+    Request body (JSON):
+        sample_rate: int - Audio sample rate (default 16000)
+        grammar: list[str] - Optional list of words to constrain recognition to.
+                            Pass null/empty to clear grammar and use free-form recognition.
+        use_grammar: bool - If true, uses existing grammar. If false, clears grammar.
+    """
     data = request.json or {}
     sample_rate = data.get('sample_rate', 16000)
+    grammar = data.get('grammar', None)
+    use_grammar = data.get('use_grammar', True)
 
     if not is_initialized:
         return jsonify({
@@ -341,10 +398,53 @@ def start_recognition():
             'error': 'Model not initialized'
         }), 400
 
-    success = start_streaming_recognition(sample_rate)
+    # Clear grammar if explicitly requested
+    if not use_grammar:
+        set_grammar(None)
+        grammar = None
+
+    success = start_streaming_recognition(sample_rate, grammar)
     return jsonify({
         'success': success,
-        'is_recognizing': is_recognizing
+        'is_recognizing': is_recognizing,
+        'has_grammar': current_grammar is not None
+    })
+
+
+@app.route('/grammar', methods=['POST'])
+def set_grammar_endpoint():
+    """Set grammar constraint for recognition.
+
+    Request body (JSON):
+        words: list[str] - List of words to constrain recognition to.
+                          Pass null or empty list to clear grammar.
+    """
+    data = request.json or {}
+    words = data.get('words', None)
+
+    if words and isinstance(words, list) and len(words) > 0:
+        set_grammar(words)
+        return jsonify({
+            'success': True,
+            'grammar_set': True,
+            'word_count': len(current_grammar) if current_grammar else 0
+        })
+    else:
+        set_grammar(None)
+        return jsonify({
+            'success': True,
+            'grammar_set': False,
+            'word_count': 0
+        })
+
+
+@app.route('/grammar', methods=['DELETE'])
+def clear_grammar_endpoint():
+    """Clear grammar constraint (enable free-form recognition)."""
+    set_grammar(None)
+    return jsonify({
+        'success': True,
+        'grammar_set': False
     })
 
 

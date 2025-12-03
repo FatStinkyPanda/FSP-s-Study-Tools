@@ -64,6 +64,12 @@ interface SuccessResponse {
 
 interface StartResponse extends SuccessResponse {
   is_recognizing: boolean;
+  has_grammar?: boolean;
+}
+
+interface GrammarResponse extends SuccessResponse {
+  grammar_set: boolean;
+  word_count?: number;
 }
 
 interface ResultsResponse {
@@ -377,13 +383,30 @@ class VoskServiceManager {
 
   /**
    * Start streaming recognition
+   * @param sampleRate Audio sample rate (default 16000)
+   * @param grammar Optional array of words to constrain recognition to (for Voice Training)
+   * @param useGrammar If false, clears any existing grammar (for general speech-to-text)
    */
-  async startRecognition(sampleRate: number = 16000): Promise<boolean> {
+  async startRecognition(
+    sampleRate: number = 16000,
+    grammar?: string[] | null,
+    useGrammar: boolean = true
+  ): Promise<boolean> {
     try {
+      const body: Record<string, unknown> = { sample_rate: sampleRate };
+
+      if (grammar && grammar.length > 0) {
+        body.grammar = grammar;
+        log.info(`Starting recognition with grammar (${grammar.length} words)`);
+      } else if (!useGrammar) {
+        body.use_grammar = false;
+        log.info('Starting recognition without grammar (free-form mode)');
+      }
+
       const response = await fetch(`${VOSK_SERVICE_URL}/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sample_rate: sampleRate })
+        body: JSON.stringify(body)
       });
 
       if (response.ok) {
@@ -396,6 +419,51 @@ class VoskServiceManager {
       return false;
     } catch (error) {
       log.error('Failed to start recognition:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Set grammar constraint for Voice Training
+   * @param words Array of words to constrain recognition to
+   */
+  async setGrammar(words: string[]): Promise<boolean> {
+    try {
+      const response = await fetch(`${VOSK_SERVICE_URL}/grammar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ words })
+      });
+
+      if (response.ok) {
+        const data = await response.json() as GrammarResponse;
+        log.info(`Grammar set: ${data.word_count} words`);
+        return data.success;
+      }
+      return false;
+    } catch (error) {
+      log.error('Failed to set grammar:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Clear grammar constraint (enable free-form recognition for AI chat)
+   */
+  async clearGrammar(): Promise<boolean> {
+    try {
+      const response = await fetch(`${VOSK_SERVICE_URL}/grammar`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        const data = await response.json() as GrammarResponse;
+        log.info('Grammar cleared - free-form recognition enabled');
+        return data.success;
+      }
+      return false;
+    } catch (error) {
+      log.error('Failed to clear grammar:', error);
       return false;
     }
   }
@@ -463,8 +531,14 @@ class VoskServiceManager {
 
     this.resultsPollingInterval = setInterval(async () => {
       const results = await this.getResults();
-      if (results.length > 0 && this.mainWindow) {
-        this.mainWindow.webContents.send('vosk:results', results);
+      if (results.length > 0 && this.mainWindow && !this.mainWindow.isDestroyed()) {
+        try {
+          this.mainWindow.webContents.send('vosk:results', results);
+        } catch (error) {
+          // Window may have been destroyed - stop polling
+          log.debug('Window destroyed during results polling, stopping');
+          this.stopResultsPolling();
+        }
       }
     }, 100); // Poll every 100ms for low latency
   }

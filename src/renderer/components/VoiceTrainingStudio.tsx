@@ -77,6 +77,15 @@ function VoiceTrainingStudio({
   onStartTraining,
   isTraining
 }: VoiceTrainingStudioProps) {
+  // Ensure profile has required properties with defaults
+  const safeProfile = {
+    ...profile,
+    audio_samples: profile.audio_samples || [],
+    state: profile.state || 'pending',
+    progress: profile.progress || 0,
+    name: profile.name || 'Voice Profile',
+  };
+
   // Tab state
   const [activeTab, setActiveTab] = useState<Tab>('scripts');
 
@@ -122,8 +131,15 @@ function VoiceTrainingStudio({
   const animationFrameRef = useRef<number | null>(null);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const volumeCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
   const voskCleanupRef = useRef<(() => void) | null>(null);
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const workletReadyRef = useRef(false);
+  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioQueueRef = useRef<Int16Array[]>([]);
+  const audioSendIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const analyserNodeRef = useRef<AnalyserNode | null>(null);
+  const speechAnalyserIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Get words from selected script
   const scriptWords = useMemo(() => {
@@ -365,15 +381,58 @@ function VoiceTrainingStudio({
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
     }
-    if (audioProcessorRef.current) {
-      audioProcessorRef.current.disconnect();
-      audioProcessorRef.current = null;
+    // Stop MediaRecorder for speech recognition
+    if (speechRecorderRef.current && speechRecorderRef.current.state !== 'inactive') {
+      try {
+        speechRecorderRef.current.stop();
+      } catch {
+        // Ignore errors
+      }
+      speechRecorderRef.current = null;
+    }
+    // Stop audio send interval
+    if (audioSendIntervalRef.current) {
+      clearInterval(audioSendIntervalRef.current);
+      audioSendIntervalRef.current = null;
+    }
+    // Clear audio queue
+    audioQueueRef.current = [];
+    // Stop and disconnect AudioWorklet node
+    if (audioWorkletNodeRef.current) {
+      try {
+        audioWorkletNodeRef.current.port.postMessage({ command: 'stop' });
+        audioWorkletNodeRef.current.disconnect();
+      } catch {
+        // Ignore errors
+      }
+      audioWorkletNodeRef.current = null;
+    }
+    // Stop and disconnect ScriptProcessorNode
+    if (scriptProcessorRef.current) {
+      try {
+        scriptProcessorRef.current.disconnect();
+      } catch {
+        // Ignore errors
+      }
+      scriptProcessorRef.current = null;
+    }
+    if (audioSourceRef.current) {
+      try {
+        audioSourceRef.current.disconnect();
+      } catch {
+        // Ignore errors
+      }
+      audioSourceRef.current = null;
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
     }
     if (audioContextRef.current) {
-      audioContextRef.current.close();
+      try {
+        await audioContextRef.current.close();
+      } catch {
+        // Ignore errors
+      }
     }
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
@@ -389,7 +448,228 @@ function VoiceTrainingStudio({
         // Ignore errors when stopping
       }
     }
+    workletReadyRef.current = false;
   };
+
+  // AudioWorklet processor code as a string (will be loaded as Blob URL)
+  // This avoids webpack bundling issues with worklet modules
+  const audioWorkletCode = `
+    class AudioCaptureProcessor extends AudioWorkletProcessor {
+      constructor() {
+        super();
+        this.bufferSize = 4096;
+        this.sampleBuffer = [];
+        this.isCapturing = true;
+        this.port.onmessage = (event) => {
+          if (event.data.command === 'stop') {
+            this.isCapturing = false;
+          } else if (event.data.command === 'start') {
+            this.isCapturing = true;
+          }
+        };
+      }
+      process(inputs, outputs, parameters) {
+        if (!this.isCapturing) return true;
+        const input = inputs[0];
+        if (!input || input.length === 0) return true;
+        const channelData = input[0];
+        if (!channelData || channelData.length === 0) return true;
+        for (let i = 0; i < channelData.length; i++) {
+          this.sampleBuffer.push(channelData[i]);
+        }
+        if (this.sampleBuffer.length >= this.bufferSize) {
+          const samplesToSend = this.sampleBuffer.splice(0, this.bufferSize);
+          const int16Array = new Int16Array(samplesToSend.length);
+          for (let i = 0; i < samplesToSend.length; i++) {
+            const s = Math.max(-1, Math.min(1, samplesToSend[i]));
+            int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          }
+          this.port.postMessage({ type: 'audio', data: int16Array.buffer }, [int16Array.buffer]);
+        }
+        return true;
+      }
+    }
+    registerProcessor('audio-capture-processor', AudioCaptureProcessor);
+  `;
+
+  // MediaRecorder reference for speech recognition audio capture
+  const speechRecorderRef = useRef<MediaRecorder | null>(null);
+
+  // Initialize AnalyserNode-based audio capture for speech recognition
+  // This approach uses polling instead of callbacks, avoiding all threading issues
+  const initializeAnalyserCapture = useCallback((): boolean => {
+    if (!streamRef.current || !audioContextRef.current) {
+      log.error('No audio stream or context available for AnalyserNode');
+      return false;
+    }
+
+    if (analyserNodeRef.current && speechAnalyserIntervalRef.current) {
+      log.info('AnalyserNode already initialized for speech');
+      return true;
+    }
+
+    try {
+      // Create AnalyserNode for capturing time domain data
+      const analyser = audioContextRef.current.createAnalyser();
+      // Use larger fftSize for more audio data per read (4096 samples)
+      // At 48kHz this is ~85ms of audio per read
+      analyser.fftSize = 4096;
+      analyser.smoothingTimeConstant = 0; // No smoothing for raw data
+      analyserNodeRef.current = analyser;
+
+      // Connect audio source to analyser
+      if (audioSourceRef.current) {
+        audioSourceRef.current.connect(analyser);
+      } else {
+        const source = audioContextRef.current.createMediaStreamSource(streamRef.current);
+        audioSourceRef.current = source;
+        source.connect(analyser);
+      }
+
+      // Create buffer for capturing audio data
+      const bufferLength = analyser.fftSize;
+      const dataArray = new Float32Array(bufferLength);
+
+      // Accumulator for collecting audio between sends
+      // Send smaller chunks more frequently for faster recognition
+      let audioAccumulator: number[] = [];
+      const targetChunkSize = 2000; // ~42ms at 48kHz - smaller chunks = faster response
+
+      // Start polling interval to capture and send audio data
+      // Use 20ms interval for very responsive speech recognition
+      speechAnalyserIntervalRef.current = setInterval(() => {
+        if (!isListeningRef.current || !analyserNodeRef.current) return;
+
+        try {
+          // Get time domain data (raw audio samples)
+          analyserNodeRef.current.getFloatTimeDomainData(dataArray);
+
+          // Calculate RMS to detect if there's actual audio (more accurate than peak)
+          let sumSquares = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            sumSquares += dataArray[i] * dataArray[i];
+          }
+          const rms = Math.sqrt(sumSquares / dataArray.length);
+
+          // Very low threshold to catch all speech including quiet sounds
+          // 0.0001 RMS is extremely sensitive
+          if (rms < 0.0001) return; // Skip only complete silence
+
+          // Convert Float32 to Int16 and add to accumulator
+          for (let i = 0; i < dataArray.length; i++) {
+            const s = Math.max(-1, Math.min(1, dataArray[i]));
+            audioAccumulator.push(s < 0 ? Math.floor(s * 0x8000) : Math.floor(s * 0x7FFF));
+          }
+
+          // Send chunks more frequently for faster recognition
+          while (audioAccumulator.length >= targetChunkSize) {
+            // Send the accumulated audio
+            const audioToSend = audioAccumulator.slice(0, targetChunkSize);
+            audioAccumulator = audioAccumulator.slice(targetChunkSize);
+
+            window.electronAPI.invoke('vosk:sendAudioArray', audioToSend).catch(() => {
+              // Silently ignore send errors - they're non-fatal
+            });
+          }
+        } catch {
+          // Ignore errors during capture - non-fatal
+        }
+      }, 20); // 20ms polling for very responsive speech detection
+
+      log.info('AnalyserNode initialized for speech recognition (optimized: 30ms polling, 2048 fftSize)');
+      return true;
+    } catch (err) {
+      log.error('Failed to initialize AnalyserNode for speech:', err);
+      return false;
+    }
+  }, []);
+
+  // Stop AnalyserNode capture
+  const stopAnalyserCapture = useCallback(() => {
+    if (speechAnalyserIntervalRef.current) {
+      clearInterval(speechAnalyserIntervalRef.current);
+      speechAnalyserIntervalRef.current = null;
+    }
+    // Don't disconnect analyser - it may be used for visualization
+  }, []);
+
+  // Initialize ScriptProcessorNode fallback for audio capture (DISABLED - causes crashes)
+  // Using AnalyserNode polling approach instead
+  const initializeScriptProcessor = useCallback((): boolean => {
+    // ScriptProcessorNode causes renderer crashes in Electron even with queue-based approach
+    // Use AnalyserNode with polling instead
+    log.warn('ScriptProcessorNode disabled due to Electron crashes, using AnalyserNode polling');
+    return initializeAnalyserCapture();
+  }, [initializeAnalyserCapture]);
+
+  // Initialize AudioWorklet for audio capture (preferred, but may fail in Electron)
+  const initializeAudioWorklet = useCallback(async (): Promise<boolean> => {
+    if (!audioContextRef.current || !streamRef.current) {
+      log.error('AudioContext or stream not available for AudioWorklet');
+      return false;
+    }
+
+    if (workletReadyRef.current && audioWorkletNodeRef.current) {
+      log.info('AudioWorklet already initialized');
+      return true;
+    }
+
+    try {
+      const audioContext = audioContextRef.current;
+
+      // Create a Blob URL for the AudioWorklet processor code
+      // This avoids issues with webpack bundling and file paths
+      const blob = new Blob([audioWorkletCode], { type: 'application/javascript' });
+      const workletUrl = URL.createObjectURL(blob);
+
+      try {
+        await audioContext.audioWorklet.addModule(workletUrl);
+        log.info('AudioWorklet module registered via Blob URL');
+      } finally {
+        // Clean up the blob URL after registration
+        URL.revokeObjectURL(workletUrl);
+      }
+
+      // Create the AudioWorklet node
+      const workletNode = new AudioWorkletNode(audioContext, 'audio-capture-processor');
+      audioWorkletNodeRef.current = workletNode;
+
+      // Set up message handler for audio data from the worklet
+      // This runs on the main thread but receives data asynchronously via MessagePort
+      workletNode.port.onmessage = (event) => {
+        if (!isListeningRef.current) return;
+
+        if (event.data.type === 'audio') {
+          // Audio data received from worklet - send to Vosk via IPC
+          // This is safe because it's triggered by MessagePort, not audio callback
+          const audioBuffer = event.data.data as ArrayBuffer;
+          const int16Array = new Int16Array(audioBuffer);
+
+          // Convert to plain number array for IPC (most reliable)
+          const audioArray = Array.from(int16Array);
+
+          // Fire and forget - don't await to avoid blocking
+          window.electronAPI.invoke('vosk:sendAudioArray', audioArray).catch((err: Error) => {
+            log.debug('Audio send error (non-fatal):', err.message);
+          });
+        }
+      };
+
+      // Connect the audio source to the worklet
+      if (!audioSourceRef.current) {
+        audioSourceRef.current = audioContext.createMediaStreamSource(streamRef.current);
+      }
+      audioSourceRef.current.connect(workletNode);
+
+      workletReadyRef.current = true;
+      log.info('AudioWorklet initialized and connected');
+      return true;
+    } catch (err) {
+      log.error('Failed to initialize AudioWorklet:', err);
+      workletReadyRef.current = false;
+      return false;
+    }
+  }, []);
 
   // Start speech recognition using Vosk offline service
   const startListening = useCallback(async () => {
@@ -421,45 +701,44 @@ function VoiceTrainingStudio({
         setRecognitionError(null);
       }
 
-      // Start Vosk recognition
+      // Start Vosk recognition with grammar constraint (script words)
+      // This dramatically improves accuracy by limiting recognition to expected words
       const sampleRate = audioContextRef.current?.sampleRate || 16000;
-      const started = await window.electronAPI.invoke('vosk:startRecognition', sampleRate) as boolean;
+      const grammar = scriptWords.length > 0 ? scriptWords : undefined;
+      log.info(`Starting recognition with ${grammar ? grammar.length : 0} grammar words`);
+      const started = await window.electronAPI.invoke('vosk:startRecognition', sampleRate, grammar) as boolean;
 
       if (!started) {
         setRecognitionError('Failed to start speech recognition');
         return;
       }
 
-      // Set up audio streaming to Vosk
-      if (audioContextRef.current && streamRef.current) {
-        // Create a ScriptProcessorNode to capture audio data
-        const source = audioContextRef.current.createMediaStreamSource(streamRef.current);
-        const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+      // Try AudioWorklet first (preferred), fall back to ScriptProcessorNode
+      let audioInitialized = false;
 
-        processor.onaudioprocess = async (e) => {
-          if (!isListeningRef.current) return;
+      // Try AudioWorklet first
+      const workletInitialized = await initializeAudioWorklet();
+      if (workletInitialized) {
+        // Start the worklet capturing
+        if (audioWorkletNodeRef.current) {
+          audioWorkletNodeRef.current.port.postMessage({ command: 'start' });
+        }
+        log.info('AudioWorklet audio streaming started');
+        audioInitialized = true;
+      } else {
+        log.warn('AudioWorklet failed, trying ScriptProcessorNode fallback...');
 
-          // Get audio data
-          const inputData = e.inputBuffer.getChannelData(0);
+        // Fall back to ScriptProcessorNode with queue-based approach
+        const scriptProcessorInitialized = initializeScriptProcessor();
+        if (scriptProcessorInitialized) {
+          log.info('ScriptProcessorNode fallback initialized');
+          audioInitialized = true;
+        }
+      }
 
-          // Convert Float32 to Int16 PCM (what Vosk expects)
-          const pcmData = new Int16Array(inputData.length);
-          for (let i = 0; i < inputData.length; i++) {
-            const s = Math.max(-1, Math.min(1, inputData[i]));
-            pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-          }
-
-          // Send to Vosk service
-          try {
-            await window.electronAPI.invoke('vosk:sendAudio', pcmData.buffer);
-          } catch {
-            // Silent fail for audio sending - don't spam logs
-          }
-        };
-
-        source.connect(processor);
-        processor.connect(audioContextRef.current.destination);
-        audioProcessorRef.current = processor;
+      if (!audioInitialized) {
+        log.error('Both AudioWorklet and ScriptProcessorNode failed');
+        setRecognitionError('Audio capture failed - speech detection limited');
       }
 
       setIsListening(true);
@@ -472,18 +751,33 @@ function VoiceTrainingStudio({
       setIsListening(false);
       isListeningRef.current = false;
     }
-  }, [recognitionSupported, micStatus.active, voskStatus]);
+  }, [recognitionSupported, micStatus.active, voskStatus, initializeAudioWorklet, initializeScriptProcessor]);
 
   const stopListening = useCallback(async () => {
     log.debug('Stopping Vosk speech recognition');
     isListeningRef.current = false;
     setIsListening(false);
 
-    // Disconnect audio processor
-    if (audioProcessorRef.current) {
-      audioProcessorRef.current.disconnect();
-      audioProcessorRef.current = null;
+    // Stop AudioWorklet capturing (but keep it connected for future use)
+    if (audioWorkletNodeRef.current) {
+      try {
+        audioWorkletNodeRef.current.port.postMessage({ command: 'stop' });
+      } catch {
+        // Ignore errors
+      }
     }
+
+    // Stop AnalyserNode capture
+    stopAnalyserCapture();
+
+    // Stop audio send interval (legacy ScriptProcessorNode fallback)
+    if (audioSendIntervalRef.current) {
+      clearInterval(audioSendIntervalRef.current);
+      audioSendIntervalRef.current = null;
+    }
+
+    // Clear audio queue
+    audioQueueRef.current = [];
 
     // Stop Vosk recognition
     try {
@@ -491,7 +785,7 @@ function VoiceTrainingStudio({
     } catch {
       // Ignore errors when stopping
     }
-  }, []);
+  }, [stopAnalyserCapture]);
 
   // Recording functions
   const startRecording = useCallback(async () => {
@@ -568,7 +862,7 @@ function VoiceTrainingStudio({
       const result = await window.electronAPI.invoke('voice:saveRecording', {
         filename,
         data: base64,
-        profileId: profile.id
+        profileId: safeProfile.id
       }) as { success: boolean; path?: string; error?: string };
 
       if (result.success && result.path) {
@@ -585,7 +879,7 @@ function VoiceTrainingStudio({
     } catch (err) {
       log.error('Error saving recording:', err);
     }
-  }, [recordedBlob, recordedUrl, profile.id, onSaveRecording]);
+  }, [recordedBlob, recordedUrl, safeProfile.id, onSaveRecording]);
 
   const discardRecording = useCallback(() => {
     setRecordedBlob(null);
@@ -650,8 +944,8 @@ function VoiceTrainingStudio({
   }, [selectedCategory]);
 
   // Check if training is needed
-  const needsTraining = profile.state === 'pending' || profile.state === 'failed';
-  const samplesChanged = profile.audio_samples.length > 0 && needsTraining;
+  const needsTraining = safeProfile.state === 'pending' || safeProfile.state === 'failed';
+  const samplesChanged = safeProfile.audio_samples.length > 0 && needsTraining;
 
   return (
     <div className="voice-training-studio">
@@ -659,7 +953,7 @@ function VoiceTrainingStudio({
       <div className="studio-header">
         <div className="studio-title">
           <h2>Voice Training Studio</h2>
-          <span className="profile-name">{profile.name}</span>
+          <span className="profile-name">{safeProfile.name}</span>
         </div>
         <button className="close-button" onClick={onClose}>Close</button>
       </div>
@@ -708,7 +1002,7 @@ function VoiceTrainingStudio({
           className={`tab-btn ${activeTab === 'samples' ? 'active' : ''}`}
           onClick={() => setActiveTab('samples')}
         >
-          Samples ({profile.audio_samples.length})
+          Samples ({safeProfile.audio_samples.length})
         </button>
       </div>
 
@@ -932,12 +1226,12 @@ function VoiceTrainingStudio({
           <div className="samples-tab">
             <div className="samples-header">
               <h3>Voice Samples</h3>
-              {profile.audio_samples.length > 0 && (
+              {safeProfile.audio_samples.length > 0 && (
                 <div className="training-status">
-                  <span className={`status-badge ${profile.state}`}>
-                    {profile.state === 'ready' ? 'Trained' :
-                     profile.state === 'extracting' ? 'Training...' :
-                     profile.state === 'failed' ? 'Failed' : 'Needs Training'}
+                  <span className={`status-badge ${safeProfile.state === 'processing' ? 'extracting' : safeProfile.state}`}>
+                    {safeProfile.state === 'ready' ? 'Trained' :
+                     safeProfile.state === 'processing' ? 'Processing...' :
+                     safeProfile.state === 'failed' ? 'Failed' : 'Needs Training'}
                   </span>
                   {samplesChanged && !isTraining && (
                     <button
@@ -951,7 +1245,7 @@ function VoiceTrainingStudio({
               )}
             </div>
 
-            {profile.audio_samples.length === 0 ? (
+            {safeProfile.audio_samples.length === 0 ? (
               <div className="no-samples">
                 <p>No voice samples yet</p>
                 <p className="hint">
@@ -966,7 +1260,7 @@ function VoiceTrainingStudio({
               </div>
             ) : (
               <div className="samples-list">
-                {profile.audio_samples.map((sample, index) => {
+                {safeProfile.audio_samples.map((sample, index) => {
                   const filename = sample.split(/[/\\]/).pop() || `Sample ${index + 1}`;
                   return (
                     <div key={sample} className="sample-item">
@@ -1009,8 +1303,8 @@ function VoiceTrainingStudio({
             )}
 
             <div className="samples-summary">
-              <p>Total Samples: {profile.audio_samples.length}</p>
-              {profile.audio_samples.length < 3 && (
+              <p>Total Samples: {safeProfile.audio_samples.length}</p>
+              {safeProfile.audio_samples.length < 3 && (
                 <p className="recommendation">
                   Recommended: Add at least 3 samples for better voice quality
                 </p>
@@ -1026,7 +1320,7 @@ function VoiceTrainingStudio({
           <div className="training-progress">
             <div className="spinner" />
             <p>Training voice profile...</p>
-            <p className="progress-percent">{profile.progress}%</p>
+            <p className="progress-percent">{safeProfile.progress}%</p>
           </div>
         </div>
       )}

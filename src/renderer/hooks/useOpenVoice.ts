@@ -1,8 +1,10 @@
 /**
- * useOpenVoice Hook
+ * useOpenVoice Hook (XTTS v2)
  *
- * React hook for integrating with the OpenVoice voice cloning service.
- * Provides methods for voice training, synthesis, and status management.
+ * React hook for integrating with the XTTS v2 voice cloning service.
+ * Provides methods for voice profile processing, synthesis, and status management.
+ *
+ * Note: Hook and IPC channel names kept as 'openvoice' for backward compatibility.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -22,10 +24,10 @@ export interface OpenVoiceStatus {
 export interface OpenVoiceProfile {
   id: string;
   name: string;
-  state: 'pending' | 'extracting' | 'ready' | 'failed';
+  state: 'pending' | 'processing' | 'ready' | 'failed';  // XTTS uses 'processing' instead of 'extracting'
   created_at: string;
   audio_samples: string[];
-  embedding_path?: string;
+  speaker_wav?: string;  // XTTS uses speaker_wav instead of embedding_path
   error?: string;
   progress: number;
 }

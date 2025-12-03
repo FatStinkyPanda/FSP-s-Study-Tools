@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
-// OpenVoice status interface
+// Voice Cloning (XTTS v2) status interface - keeping name for backward compatibility
 export interface OpenVoiceStatus {
   running: boolean;
   initialized: boolean;
@@ -31,14 +31,14 @@ export interface VoskStatus {
   error: string | null;
 }
 
-// OpenVoice profile interface
+// Voice profile interface (XTTS v2) - keeping name for backward compatibility
 export interface OpenVoiceProfile {
   id: string;
   name: string;
-  state: 'pending' | 'extracting' | 'ready' | 'failed';
+  state: 'pending' | 'processing' | 'ready' | 'failed';  // XTTS uses 'processing' instead of 'extracting'
   created_at: string;
   audio_samples: string[];
-  embedding_path?: string;
+  speaker_wav?: string;  // XTTS uses speaker_wav instead of embedding_path
   error?: string;
   progress: number;
 }

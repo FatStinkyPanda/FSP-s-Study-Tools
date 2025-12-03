@@ -1487,8 +1487,10 @@ class Application {
       return await voskService.initializeModel();
     });
 
-    // Start speech recognition
-    ipcMain.handle('vosk:startRecognition', async (_event, sampleRate?: number) => {
+    // Start speech recognition with optional grammar constraint
+    // grammar: string[] - array of words to constrain recognition to (for Voice Training)
+    // useGrammar: boolean - if false, clears grammar for free-form recognition (for AI chat)
+    ipcMain.handle('vosk:startRecognition', async (_event, sampleRate?: number, grammar?: string[], useGrammar?: boolean) => {
       // Make sure service is running
       if (!voskService.isServiceRunning()) {
         const started = await voskService.start();
@@ -1496,7 +1498,11 @@ class Application {
           return { success: false, error: 'Failed to start Vosk service' };
         }
       }
-      const success = await voskService.startRecognition(sampleRate || 16000);
+      const success = await voskService.startRecognition(
+        sampleRate || 16000,
+        grammar || null,
+        useGrammar !== false // Default to true
+      );
       return { success };
     });
 
@@ -1506,10 +1512,51 @@ class Application {
       return { success };
     });
 
-    // Send audio data for recognition
+    // Set grammar constraint for Voice Training
+    ipcMain.handle('vosk:setGrammar', async (_event, words: string[]) => {
+      const success = await voskService.setGrammar(words);
+      return { success };
+    });
+
+    // Clear grammar constraint for free-form recognition (AI chat)
+    ipcMain.handle('vosk:clearGrammar', async () => {
+      const success = await voskService.clearGrammar();
+      return { success };
+    });
+
+    // Send audio data for recognition (ArrayBuffer - may have IPC issues)
     ipcMain.handle('vosk:sendAudio', async (_event, audioData: ArrayBuffer) => {
       const success = await voskService.sendAudio(audioData);
       return { success };
+    });
+
+    // Send audio data for recognition (base64 string - more reliable for IPC)
+    ipcMain.handle('vosk:sendAudioBase64', async (_event, base64Audio: string) => {
+      try {
+        // Convert base64 to ArrayBuffer
+        const binaryString = Buffer.from(base64Audio, 'base64');
+        const audioData = binaryString.buffer.slice(
+          binaryString.byteOffset,
+          binaryString.byteOffset + binaryString.byteLength
+        );
+        const success = await voskService.sendAudio(audioData);
+        return { success };
+      } catch {
+        return { success: false };
+      }
+    });
+
+    // Send audio data for recognition (plain number array - most reliable for IPC)
+    ipcMain.handle('vosk:sendAudioArray', async (_event, audioArray: number[]) => {
+      try {
+        // Convert plain array to Int16Array then to ArrayBuffer
+        const int16Array = new Int16Array(audioArray);
+        const audioData = int16Array.buffer;
+        const success = await voskService.sendAudio(audioData);
+        return { success };
+      } catch {
+        return { success: false };
+      }
     });
 
     // Get recognition results

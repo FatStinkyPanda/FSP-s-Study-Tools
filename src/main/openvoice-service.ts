@@ -1,8 +1,16 @@
 /**
- * OpenVoice Service Manager
+ * Voice Cloning Service Manager (XTTS v2)
  *
- * Manages the Python OpenVoice backend service and provides IPC handlers
- * for voice training and TTS synthesis.
+ * Manages the Python XTTS v2 backend service and provides IPC handlers
+ * for voice cloning and TTS synthesis.
+ *
+ * XTTS v2 provides:
+ * - Zero-shot voice cloning (no training needed, just reference audio)
+ * - Better voice similarity than OpenVoice
+ * - Faster inference
+ * - Multi-language support
+ *
+ * Note: IPC channels still use 'openvoice:' prefix for backward compatibility
  */
 
 import { spawn, ChildProcess } from 'child_process';
@@ -12,9 +20,9 @@ import * as fs from 'fs';
 import * as http from 'http';
 import { createLogger } from '../shared/logger';
 
-const log = createLogger('OpenVoice');
+const log = createLogger('XTTS');
 
-// OpenVoice service configuration - configurable via environment variables
+// XTTS service configuration - configurable via environment variables
 const SERVICE_PORT = parseInt(process.env.OPENVOICE_PORT || '5123', 10);
 const SERVICE_HOST = process.env.OPENVOICE_HOST || '127.0.0.1';
 const SERVICE_URL = `http://${SERVICE_HOST}:${SERVICE_PORT}`;
@@ -43,13 +51,13 @@ const PERMANENT_ERROR_PATTERNS = [
   'not enough speech',
 ];
 
-interface OpenVoiceProfile {
+interface VoiceProfile {
   id: string;
   name: string;
-  state: 'pending' | 'extracting' | 'ready' | 'failed';
+  state: 'pending' | 'processing' | 'ready' | 'failed';
   created_at: string;
   audio_samples: string[];
-  embedding_path?: string;
+  speaker_wav?: string;  // Processed reference audio for XTTS
   error?: string;
   progress: number;
 }
@@ -66,13 +74,13 @@ interface ServiceStatus {
   initialized: boolean;
   device: string;
   error?: string;
-  checkpointsReady: boolean;
+  checkpointsReady: boolean;  // For XTTS, this is always true once model downloads
 }
 
 // Auto-shutdown configuration - stop service after period of inactivity
 const AUTO_SHUTDOWN_DELAY_MS = parseInt(process.env.OPENVOICE_AUTO_SHUTDOWN_MS || '300000', 10); // 5 minutes default
 
-class OpenVoiceServiceManager {
+class XTTSServiceManager {
   private process: ChildProcess | null = null;
   private isStarting = false;
   private statusCheckInterval: NodeJS.Timeout | null = null;
@@ -99,7 +107,7 @@ class OpenVoiceServiceManager {
       this.autoShutdownTimer = setTimeout(() => {
         const idleTime = Date.now() - this.lastActivityTime;
         if (idleTime >= AUTO_SHUTDOWN_DELAY_MS) {
-          log.info(`OpenVoice service idle for ${Math.round(idleTime / 1000)}s, auto-stopping to save resources`);
+          log.info(`XTTS service idle for ${Math.round(idleTime / 1000)}s, auto-stopping to save resources`);
           this.stopService();
         }
       }, AUTO_SHUTDOWN_DELAY_MS);
@@ -132,7 +140,7 @@ class OpenVoiceServiceManager {
     }
 
     // Start the service
-    log.info('Auto-starting OpenVoice service on demand');
+    log.info('Auto-starting XTTS service on demand');
     return this.startService();
   }
 
@@ -286,13 +294,13 @@ class OpenVoiceServiceManager {
         return { success: false, error: 'Python not found. Please install Python 3.9+' };
       }
 
-      // Find service script
-      const serviceScript = path.join(app.getAppPath(), 'src', 'python', 'openvoice_service.py');
+      // Find service script (XTTS v2)
+      const serviceScript = path.join(app.getAppPath(), 'src', 'python', 'xtts_service.py');
       if (!fs.existsSync(serviceScript)) {
         return { success: false, error: `Service script not found: ${serviceScript}` };
       }
 
-      log.info(`Starting OpenVoice service: ${pythonPath} ${serviceScript}`);
+      log.info(`Starting XTTS service: ${pythonPath} ${serviceScript}`);
 
       // Add bundled ffmpeg to PATH for audio processing
       const ffmpegBin = path.join(app.getAppPath(), 'ffmpeg_bin');
@@ -313,13 +321,13 @@ class OpenVoiceServiceManager {
       });
 
       this.process.on('close', (code) => {
-        log.info(`OpenVoice service exited with code ${code}`);
+        log.info(`XTTS service exited with code ${code}`);
         this.process = null;
         this.sendStatusUpdate();
       });
 
       this.process.on('error', (error) => {
-        log.error('OpenVoice service error:', error);
+        log.error('XTTS service error:', error);
         this.process = null;
       });
 
@@ -402,7 +410,7 @@ class OpenVoiceServiceManager {
     // Auto-start service if not running
     const serviceResult = await this.ensureServiceRunning();
     if (!serviceResult.success) {
-      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+      return { success: false, error: `XTTS service unavailable: ${serviceResult.error}` };
     }
 
     this.resetAutoShutdownTimer();
@@ -411,11 +419,11 @@ class OpenVoiceServiceManager {
     return result;
   }
 
-  async listProfiles(): Promise<{ success: boolean; profiles?: OpenVoiceProfile[]; error?: string }> {
+  async listProfiles(): Promise<{ success: boolean; profiles?: VoiceProfile[]; error?: string }> {
     // Auto-start service if not running
     const serviceResult = await this.ensureServiceRunning();
     if (!serviceResult.success) {
-      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}`, profiles: [] };
+      return { success: false, error: `XTTS service unavailable: ${serviceResult.error}`, profiles: [] };
     }
 
     this.resetAutoShutdownTimer();
@@ -426,11 +434,11 @@ class OpenVoiceServiceManager {
     return { success: false, error: result.error };
   }
 
-  async getProfile(profileId: string): Promise<{ success: boolean; profile?: OpenVoiceProfile; error?: string }> {
+  async getProfile(profileId: string): Promise<{ success: boolean; profile?: VoiceProfile; error?: string }> {
     // Auto-start service if not running
     const serviceResult = await this.ensureServiceRunning();
     if (!serviceResult.success) {
-      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+      return { success: false, error: `XTTS service unavailable: ${serviceResult.error}` };
     }
 
     this.resetAutoShutdownTimer();
@@ -444,11 +452,11 @@ class OpenVoiceServiceManager {
   async createProfile(
     name: string,
     audioSamples: string[]
-  ): Promise<{ success: boolean; profile?: OpenVoiceProfile; error?: string }> {
+  ): Promise<{ success: boolean; profile?: VoiceProfile; error?: string }> {
     // Auto-start service if not running
     const serviceResult = await this.ensureServiceRunning();
     if (!serviceResult.success) {
-      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+      return { success: false, error: `XTTS service unavailable: ${serviceResult.error}` };
     }
 
     this.resetAutoShutdownTimer();
@@ -466,7 +474,7 @@ class OpenVoiceServiceManager {
     // Auto-start service if not running
     const serviceResult = await this.ensureServiceRunning();
     if (!serviceResult.success) {
-      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+      return { success: false, error: `XTTS service unavailable: ${serviceResult.error}` };
     }
 
     this.resetAutoShutdownTimer();
@@ -478,7 +486,7 @@ class OpenVoiceServiceManager {
     // Auto-start service if not running (seamless user experience)
     const serviceResult = await this.ensureServiceRunning();
     if (!serviceResult.success) {
-      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+      return { success: false, error: `XTTS service unavailable: ${serviceResult.error}` };
     }
 
     // Reset auto-shutdown timer on activity
@@ -494,7 +502,8 @@ class OpenVoiceServiceManager {
     // Keep activity going during training
     this.resetAutoShutdownTimer();
 
-    const result = await this.makeRequest('POST', `/profiles/${profileId}/train`);
+    // XTTS uses /process endpoint (zero-shot, just prepares reference audio)
+    const result = await this.makeRequest('POST', `/profiles/${profileId}/process`);
 
     // Start polling for training progress if request was accepted
     if (result.success) {
@@ -544,24 +553,28 @@ class OpenVoiceServiceManager {
 
   private sendTrainingRetryUpdate(profileId: string, attempt: number, maxAttempts: number, lastError: string) {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('openvoice:trainingRetry', {
-        profileId,
-        attempt,
-        maxAttempts,
-        lastError,
-        message: `Retrying training (attempt ${attempt}/${maxAttempts})...`,
-      });
+      try {
+        this.mainWindow.webContents.send('openvoice:trainingRetry', {
+          profileId,
+          attempt,
+          maxAttempts,
+          lastError,
+          message: `Retrying training (attempt ${attempt}/${maxAttempts})...`,
+        });
+      } catch (error) {
+        console.error('Error sending training retry update:', error);
+      }
     }
   }
 
   async updateProfileSamples(
     profileId: string,
     audioSamples: string[]
-  ): Promise<{ success: boolean; profile?: OpenVoiceProfile; error?: string }> {
+  ): Promise<{ success: boolean; profile?: VoiceProfile; error?: string }> {
     // Auto-start service if not running
     const serviceResult = await this.ensureServiceRunning();
     if (!serviceResult.success) {
-      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+      return { success: false, error: `XTTS service unavailable: ${serviceResult.error}` };
     }
 
     this.resetAutoShutdownTimer();
@@ -578,7 +591,7 @@ class OpenVoiceServiceManager {
     // Auto-start service if not running (seamless user experience)
     const serviceResult = await this.ensureServiceRunning();
     if (!serviceResult.success) {
-      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+      return { success: false, error: `XTTS service unavailable: ${serviceResult.error}` };
     }
 
     // Reset auto-shutdown timer on activity
@@ -607,7 +620,7 @@ class OpenVoiceServiceManager {
     // Auto-start service if not running (seamless user experience)
     const serviceResult = await this.ensureServiceRunning();
     if (!serviceResult.success) {
-      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+      return { success: false, error: `XTTS service unavailable: ${serviceResult.error}` };
     }
 
     // Reset auto-shutdown timer on activity
@@ -629,51 +642,47 @@ class OpenVoiceServiceManager {
   }
 
   async checkpointsStatus(): Promise<{ ready: boolean; checkpoints_dir?: string; error?: string }> {
-    // Auto-start service if not running
+    // For XTTS, check model status instead of checkpoints
+    // XTTS auto-downloads the model via the TTS library
     const serviceResult = await this.ensureServiceRunning();
     if (!serviceResult.success) {
-      return { ready: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+      return { ready: false, error: `XTTS service unavailable: ${serviceResult.error}` };
     }
 
     this.resetAutoShutdownTimer();
-    const result = await this.makeRequest('GET', '/checkpoints/status');
+    const result = await this.makeRequest('GET', '/model/status');
     if (result.success) {
       return {
-        ready: result.data?.ready || false,
-        checkpoints_dir: result.data?.checkpoints_dir,
+        ready: result.data?.initialized || false,
+        checkpoints_dir: result.data?.model_path,
       };
     }
     return { ready: false, error: result.error };
   }
 
   async downloadCheckpoints(): Promise<{ success: boolean; message?: string; error?: string }> {
-    // Auto-start service if not running
+    // For XTTS, model downloads automatically on first use via TTS library
+    // This just initializes the model (which triggers download if needed)
     const serviceResult = await this.ensureServiceRunning();
     if (!serviceResult.success) {
-      // If service isn't running, return manual instructions
-      const checkpointsDir = path.join(app.getAppPath(), 'openvoice_checkpoints');
       return {
         success: false,
-        error: `OpenVoice service unavailable. Please download OpenVoice v2 checkpoints from https://myshell-public-repo-hosting.s3.amazonaws.com/openvoice/checkpoints_v2_0417.zip and extract to ${checkpointsDir}`,
+        error: `XTTS service unavailable: ${serviceResult.error}`,
       };
     }
 
     this.resetAutoShutdownTimer();
 
-    // Start automatic checkpoint download
-    const result = await this.makeRequest('POST', '/checkpoints/download', {}, 10000);
+    // Initialize the model (triggers automatic download if needed)
+    const result = await this.makeRequest('POST', '/initialize', {}, 300000); // 5 min timeout for download
 
     if (result.success) {
-      // Start polling for progress
-      this.pollDownloadProgress();
-      return { success: true, message: 'Download started' };
+      return { success: true, message: 'XTTS model initialized (downloaded if needed)' };
     }
 
-    // If download failed, return manual instructions
-    const checkpointsDir = path.join(app.getAppPath(), 'openvoice_checkpoints');
     return {
       success: false,
-      error: result.error || `Please download OpenVoice v2 checkpoints from https://myshell-public-repo-hosting.s3.amazonaws.com/openvoice/checkpoints_v2_0417.zip and extract to ${checkpointsDir}`,
+      error: result.error || 'Failed to initialize XTTS model',
     };
   }
 
@@ -695,31 +704,7 @@ class OpenVoiceServiceManager {
     return { downloading: false, progress: 0, status: '', error: result.error };
   }
 
-  private async pollDownloadProgress() {
-    const poll = async () => {
-      const status = await this.getDownloadStatus();
-      this.sendDownloadUpdate(status);
-
-      if (status.downloading) {
-        setTimeout(poll, 1000);
-      } else {
-        // Refresh main status when done
-        this.sendStatusUpdate();
-      }
-    };
-    poll();
-  }
-
-  private sendDownloadUpdate(status: {
-    downloading: boolean;
-    progress: number;
-    status: string;
-    error?: string;
-  }) {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('openvoice:downloadProgress', status);
-    }
-  }
+  // Note: pollDownloadProgress and sendDownloadUpdate removed - XTTS handles model download automatically via TTS library
 
   async validateAudio(audioPaths: string[]): Promise<{
     success: boolean;
@@ -748,7 +733,7 @@ class OpenVoiceServiceManager {
     // Auto-start service if not running
     const serviceResult = await this.ensureServiceRunning();
     if (!serviceResult.success) {
-      return { success: false, error: `OpenVoice service unavailable: ${serviceResult.error}` };
+      return { success: false, error: `XTTS service unavailable: ${serviceResult.error}` };
     }
 
     this.resetAutoShutdownTimer();
@@ -862,7 +847,8 @@ class OpenVoiceServiceManager {
       if (result.success && result.profile) {
         this.sendTrainingUpdate(result.profile);
 
-        if (result.profile.state === 'extracting') {
+        // XTTS uses 'processing' state instead of 'extracting'
+        if (result.profile.state === 'processing') {
           setTimeout(poll, 1000);
         }
       }
@@ -873,14 +859,24 @@ class OpenVoiceServiceManager {
   private sendStatusUpdate() {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.getStatus().then((status) => {
-        this.mainWindow?.webContents.send('openvoice:statusUpdate', status);
+        try {
+          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+            this.mainWindow.webContents.send('openvoice:statusUpdate', status);
+          }
+        } catch (error) {
+          console.error('Error sending status update:', error);
+        }
       });
     }
   }
 
-  private sendTrainingUpdate(profile: OpenVoiceProfile) {
+  private sendTrainingUpdate(profile: VoiceProfile) {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('openvoice:trainingUpdate', profile);
+      try {
+        this.mainWindow.webContents.send('openvoice:trainingUpdate', profile);
+      } catch (error) {
+        console.error('Error sending training update:', error);
+      }
     }
   }
 
@@ -889,8 +885,8 @@ class OpenVoiceServiceManager {
   }
 }
 
-// Singleton instance
-export const openVoiceService = new OpenVoiceServiceManager();
+// Singleton instance - keep 'openVoiceService' name for backward compatibility
+export const openVoiceService = new XTTSServiceManager();
 
 // Export for use in main process
 export default openVoiceService;
