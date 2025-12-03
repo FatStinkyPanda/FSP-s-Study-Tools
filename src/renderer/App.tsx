@@ -99,6 +99,17 @@ interface FetchModelsResult {
 }
 
 // KB Editor data types
+interface ParsedElement {
+  type: 'heading' | 'paragraph' | 'list' | 'code' | 'image' | 'table';
+  content?: string;
+  level?: number;
+  items?: string[];
+  language?: string;
+  rows?: string[][];
+  src?: string;
+  alt?: string;
+}
+
 interface KBFileReference {
   id: string;
   name: string;
@@ -107,6 +118,7 @@ interface KBFileReference {
   parsed?: boolean;
   parsedContent?: string;
   parseError?: string;
+  parsedElements?: ParsedElement[];
 }
 
 interface KBModule {
@@ -713,25 +725,6 @@ function App() {
     speechSynthesis.speak(utterance);
   }, [testingVoice, settings, systemVoices, openVoice]);
 
-  // Helper function to fall back to system voice
-  const fallbackToSystemVoice = (text: string, profile?: VoiceProfile) => {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = settings.voice_speed ?? 1.0;
-    utterance.pitch = settings.voice_pitch ?? 1.0;
-    utterance.volume = settings.voice_volume ?? 1.0;
-
-    if (settings.default_system_voice) {
-      const voice = systemVoices.find(v => v.name === settings.default_system_voice);
-      if (voice) utterance.voice = voice;
-    }
-
-    utterance.onend = () => setTestingVoice(false);
-    utterance.onerror = () => setTestingVoice(false);
-
-    setTestingVoice(true);
-    speechSynthesis.speak(utterance);
-  };
-
   // Preview a specific voice
   const previewVoice = useCallback((voiceName: string) => {
     if (previewingVoice) {
@@ -980,7 +973,7 @@ function App() {
     }));
   }, [settings.voice_profiles, openVoice]);
 
-  // Select audio file for voice training (placeholder for OpenVoice integration)
+  // Select audio file for voice training (integrated with XTTS v2)
   const selectAudioForTraining = useCallback(async () => {
     log.debug('selectAudioForTraining called');
     try {
@@ -1991,7 +1984,7 @@ function App() {
                 </div>
                 <span className="setting-hint">
                   {settings.voice_type === 'custom'
-                    ? 'Using custom OpenVoice voice cloning'
+                    ? 'Using custom XTTS v2 voice cloning'
                     : 'Using system text-to-speech voice'}
                 </span>
               </div>
@@ -2210,17 +2203,17 @@ function App() {
                 </span>
               </div>
 
-              {/* OpenVoice Training Section (placeholder) */}
+              {/* XTTS v2 Voice Training Section */}
               <div className="voice-training-section">
-                <h4>Custom Voice Training (OpenVoice)</h4>
+                <h4>Custom Voice Training (XTTS v2)</h4>
                 <p className="settings-description">
-                  Train a custom voice using your own audio samples. This feature uses OpenVoice
-                  for high-quality voice cloning.
+                  Create a custom voice using your own audio samples. This feature uses XTTS v2
+                  for high-quality zero-shot voice cloning.
                 </p>
 
-                {/* OpenVoice Service Status */}
+                {/* XTTS Service Status */}
                 <div className="setting-item openvoice-status">
-                  <label>OpenVoice Service Status</label>
+                  <label>XTTS Service Status</label>
                   <div className="status-row">
                     <span className={`status-indicator ${openVoice.status.running ? 'running' : 'stopped'}`}>
                       {openVoice.status.running ? 'Running' : 'Stopped'}
@@ -2254,7 +2247,7 @@ function App() {
                         }}
                         disabled={openVoice.isLoading}
                       >
-                        Start OpenVoice Service
+                        Start XTTS Service
                       </button>
                     ) : (
                       <>
