@@ -92,7 +92,7 @@ class Config:
         try:
             import torch
             return torch.cuda.is_available()
-        except:
+        except ImportError:
             return False
 
 
