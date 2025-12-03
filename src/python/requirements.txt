@@ -1,12 +1,17 @@
-# OpenVoice Service Dependencies
+# FSP's Study Tools - Python Service Dependencies
+# XTTS v2 (Coqui TTS) for voice cloning and Vosk for speech recognition
 
 # Web framework
 flask>=2.3.0
 flask-cors>=4.0.0
 
-# OpenVoice and MeloTTS (installed via pip install git+...)
-# pip install git+https://github.com/myshell-ai/OpenVoice.git
-# pip install git+https://github.com/myshell-ai/MeloTTS.git
+# XTTS v2 / Coqui TTS - high-quality voice synthesis with zero-shot voice cloning
+# pip install TTS
+TTS>=0.22.0
+
+# Vosk - offline speech recognition
+vosk>=0.3.45
+requests>=2.28.0
 
 # Audio processing
 librosa>=0.9.1
@@ -17,10 +22,6 @@ numpy>=1.22.0
 # Machine learning
 torch>=2.0.0
 torchaudio>=2.0.0
-
-# Voice processing utilities
-faster-whisper>=0.9.0
-wavmark>=0.0.3
 
 # Language processing
 eng_to_ipa>=0.0.2
