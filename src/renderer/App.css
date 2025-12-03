@@ -2864,7 +2864,7 @@ body {
   cursor: not-allowed;
 }
 
-/* OpenVoice Service Status */
+/* XTTS v2 Service Status */
 .openvoice-status {
   background: var(--bg-tertiary);
   border-radius: 8px;
